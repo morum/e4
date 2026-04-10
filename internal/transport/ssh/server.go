@@ -58,9 +58,7 @@ func NewServer(cfg Config, lobby *service.LobbyService) (*Server, error) {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
-	if s.logger != nil {
-		s.logger.Info("ssh server starting", "listen_addr", s.server.Addr)
-	}
+	s.logInfo("ssh server starting", "listen_addr", s.server.Addr)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.server.ListenAndServe()
@@ -68,17 +66,15 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
-		if s.logger != nil && err != nil && err != gssh.ErrServerClosed {
-			s.logger.Error("ssh server stopped with error", "error", err)
+		if err != nil && err != gssh.ErrServerClosed {
+			s.logError("ssh server stopped with error", "error", err)
 		}
 		if err == nil || err == gssh.ErrServerClosed {
 			return nil
 		}
 		return err
 	case <-ctx.Done():
-		if s.logger != nil {
-			s.logger.Info("ssh server shutting down")
-		}
+		s.logInfo("ssh server shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.server.Shutdown(shutdownCtx)
@@ -91,15 +87,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 }
 
 func (s *Server) handleSession(sess gssh.Session) {
-	if s.logger != nil {
-		s.logger.Info("session connected", "remote_addr", sess.RemoteAddr().String(), "ssh_user", sess.User())
-	}
+	s.logInfo("session connected", "remote_addr", sess.RemoteAddr().String(), "ssh_user", sess.User())
 
 	if len(sess.Command()) > 0 {
 		_, _ = io.WriteString(sess, "Use an interactive shell session for e4.\n")
-		if s.logger != nil {
-			s.logger.Warn("rejected exec session", "remote_addr", sess.RemoteAddr().String(), "command", sess.RawCommand())
-		}
+		s.logWarn("rejected exec session", "remote_addr", sess.RemoteAddr().String(), "command", sess.RawCommand())
 		_ = sess.Exit(1)
 		return
 	}
@@ -122,7 +114,7 @@ func (s *Server) handleSession(sess gssh.Session) {
 
 	nickname = strings.TrimSpace(nickname)
 	if nickname == "" {
-		nickname = fmt.Sprintf("guest-%s", client.id[len(client.id)-4:])
+		nickname = guestNickname(client.id)
 	}
 	client.nickname = nickname
 	client.logInfo("nickname set", "session_id", client.id, "nickname", nickname)
@@ -148,9 +140,7 @@ func (s *Server) handleSession(sess gssh.Session) {
 	}
 
 	client.leaveCurrentRoom()
-	if s.logger != nil {
-		s.logger.Info("session disconnected", "remote_addr", sess.RemoteAddr().String(), "ssh_user", sess.User(), "session_id", client.id, "nickname", client.nickname)
-	}
+	s.logInfo("session disconnected", "remote_addr", sess.RemoteAddr().String(), "ssh_user", sess.User(), "session_id", client.id, "nickname", client.nickname)
 }
 
 type clientSession struct {
@@ -460,14 +450,6 @@ func (c *clientSession) currentRole() domain.Role {
 	return c.role
 }
 
-func (c *clientSession) sendMessage(message string) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return
-	}
-	c.writeTerminal(message + "\n")
-}
-
 func (c *clientSession) sendScreen(body string) {
 	var b strings.Builder
 	if c.hasPTY {
@@ -614,6 +596,14 @@ func randomID() string {
 	return fmt.Sprintf("%x", buf)
 }
 
+func guestNickname(sessionID string) string {
+	suffix := sessionID
+	if len(sessionID) > 4 {
+		suffix = sessionID[len(sessionID)-4:]
+	}
+	return fmt.Sprintf("guest-%s", suffix)
+}
+
 func loadOrCreateHostKey(path string) (cryptossh.Signer, error) {
 	if pemBytes, err := os.ReadFile(path); err == nil {
 		return cryptossh.ParsePrivateKey(pemBytes)
@@ -638,4 +628,25 @@ func loadOrCreateHostKey(path string) (cryptossh.Signer, error) {
 	}
 
 	return cryptossh.NewSignerFromKey(key)
+}
+
+func (s *Server) logInfo(msg string, attrs ...any) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Info(msg, attrs...)
+}
+
+func (s *Server) logWarn(msg string, attrs ...any) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Warn(msg, attrs...)
+}
+
+func (s *Server) logError(msg string, attrs ...any) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Error(msg, attrs...)
 }
