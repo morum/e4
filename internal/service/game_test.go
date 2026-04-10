@@ -43,8 +43,11 @@ func TestRoomLifecycleAndSANMoves(t *testing.T) {
 	if len(snapshot.Moves) != 1 || snapshot.Moves[0] != "e4" {
 		t.Fatalf("expected SAN move history to contain e4, got %#v", snapshot.Moves)
 	}
-	if snapshot.Turn != "b" && snapshot.Turn != "black" {
+	if snapshot.Turn != "black" {
 		t.Fatalf("expected black to move next, got %q", snapshot.Turn)
+	}
+	if snapshot.Board.LastMoveFrom != "e2" || snapshot.Board.LastMoveTo != "e4" {
+		t.Fatalf("expected last move squares to be tracked, got %q -> %q", snapshot.Board.LastMoveFrom, snapshot.Board.LastMoveTo)
 	}
 
 	if err := room.Resign(black.ID); err != nil {
@@ -64,5 +67,50 @@ func TestRoomLifecycleAndSANMoves(t *testing.T) {
 	}
 	if !room.Leave(black.ID) {
 		t.Fatalf("expected room to be empty after both players leave")
+	}
+}
+
+func TestRoomSnapshotTracksCheckSquare(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|2")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("TEST02", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	moves := []struct {
+		playerID string
+		move     string
+	}{
+		{white.ID, "e4"},
+		{black.ID, "e5"},
+		{white.ID, "Qh5"},
+		{black.ID, "Nc6"},
+		{white.ID, "Bc4"},
+		{black.ID, "Nf6"},
+		{white.ID, "Qxf7"},
+	}
+
+	for _, item := range moves {
+		if err := room.SubmitMove(item.playerID, item.move); err != nil {
+			t.Fatalf("SubmitMove(%s) returned error: %v", item.move, err)
+		}
+	}
+
+	snapshot := room.Snapshot()
+	if snapshot.Board.CheckSquare != "e8" {
+		t.Fatalf("expected black king on e8 to be highlighted in check, got %q", snapshot.Board.CheckSquare)
+	}
+	if snapshot.Board.LastMoveFrom != "h5" || snapshot.Board.LastMoveTo != "f7" {
+		t.Fatalf("expected last move to be tracked as h5 -> f7, got %q -> %q", snapshot.Board.LastMoveFrom, snapshot.Board.LastMoveTo)
 	}
 }
