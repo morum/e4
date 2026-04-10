@@ -256,7 +256,10 @@ func (r *Room) loop(state roomState) {
 			if color, ok := state.clock.Flagged(time.Now()); ok {
 				state.finishByTimeout(color)
 				state.broadcast(r.id)
+				continue
 			}
+
+			state.broadcast(r.id)
 		}
 	}
 }

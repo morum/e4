@@ -137,11 +137,7 @@ func pathClear(squareMap map[chess.Square]chess.Piece, from, target chess.Square
 }
 
 func pieceSymbol(piece chess.Piece) string {
-	symbol := strings.ToUpper(piece.Type().String())
-	if piece.Color() == chess.Black {
-		return strings.ToLower(symbol)
-	}
-	return symbol
+	return piece.String()
 }
 
 func sign(v int) int {

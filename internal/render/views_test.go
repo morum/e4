@@ -31,8 +31,8 @@ func TestPromptUsesContextualModes(t *testing.T) {
 func TestRenderBoardFlipsForBlackOrientation(t *testing.T) {
 	board := domain.BoardState{
 		Squares: map[string]domain.BoardPiece{
-			"a8": {Color: "black", Symbol: "r"},
-			"h1": {Color: "white", Symbol: "R"},
+			"a8": {Color: "black", Symbol: "♜"},
+			"h1": {Color: "white", Symbol: "♖"},
 		},
 	}
 
@@ -45,10 +45,10 @@ func TestRenderBoardFlipsForBlackOrientation(t *testing.T) {
 	if !strings.Contains(blackLines[0], "h  g  f  e  d  c  b  a") {
 		t.Fatalf("expected black orientation file order, got %q", blackLines[0])
 	}
-	if !strings.Contains(whiteLines[1], " r ") {
+	if !strings.Contains(whiteLines[1], " ♜ ") {
 		t.Fatalf("expected black rook on top row for white orientation, got %q", whiteLines[1])
 	}
-	if !strings.Contains(blackLines[1], " R ") {
+	if !strings.Contains(blackLines[1], " ♖ ") {
 		t.Fatalf("expected white rook on top row for black orientation, got %q", blackLines[1])
 	}
 }
@@ -123,10 +123,10 @@ func sampleSnapshot() domain.GameSnapshot {
 		Turn:         "white",
 		Board: domain.BoardState{
 			Squares: map[string]domain.BoardPiece{
-				"e4": {Color: "white", Symbol: "P"},
-				"e5": {Color: "black", Symbol: "p"},
-				"e1": {Color: "white", Symbol: "K"},
-				"e8": {Color: "black", Symbol: "k"},
+				"e4": {Color: "white", Symbol: "♙"},
+				"e5": {Color: "black", Symbol: "♟"},
+				"e1": {Color: "white", Symbol: "♔"},
+				"e8": {Color: "black", Symbol: "♚"},
 			},
 			LastMoveFrom: "e2",
 			LastMoveTo:   "e4",

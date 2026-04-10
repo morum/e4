@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"chessh/internal/domain"
 )
@@ -48,6 +49,9 @@ func TestRoomLifecycleAndSANMoves(t *testing.T) {
 	}
 	if snapshot.Board.LastMoveFrom != "e2" || snapshot.Board.LastMoveTo != "e4" {
 		t.Fatalf("expected last move squares to be tracked, got %q -> %q", snapshot.Board.LastMoveFrom, snapshot.Board.LastMoveTo)
+	}
+	if piece := snapshot.Board.Squares["e4"]; piece.Symbol != "♙" {
+		t.Fatalf("expected board snapshot to use piece glyphs, got %q", piece.Symbol)
 	}
 
 	if err := room.Resign(black.ID); err != nil {
@@ -112,5 +116,36 @@ func TestRoomSnapshotTracksCheckSquare(t *testing.T) {
 	}
 	if snapshot.Board.LastMoveFrom != "h5" || snapshot.Board.LastMoveTo != "f7" {
 		t.Fatalf("expected last move to be tracked as h5 -> f7, got %q -> %q", snapshot.Board.LastMoveFrom, snapshot.Board.LastMoveTo)
+	}
+}
+
+func TestActiveRoomBroadcastsClockTicks(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("TEST03", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	sub := room.Subscribe()
+	defer sub.Cancel()
+
+	initial := <-sub.Updates
+	select {
+	case next := <-sub.Updates:
+		if next.WhiteTimeLeft >= initial.WhiteTimeLeft {
+			t.Fatalf("expected white clock to tick down, got %v then %v", initial.WhiteTimeLeft, next.WhiteTimeLeft)
+		}
+	case <-time.After(1500 * time.Millisecond):
+		t.Fatal("expected active room to broadcast a clock tick")
 	}
 }
