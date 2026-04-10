@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/domain"
 )
 
 type RoomRepository interface {

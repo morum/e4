@@ -5,14 +5,14 @@ import (
 	"strings"
 	"time"
 
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/domain"
 )
 
 func LobbyView(ctx Context, nickname string, rooms []domain.RoomSummary) string {
 	t := newTheme(ctx.ANSI)
 	var b strings.Builder
 
-	b.WriteString(t.title("chessh"))
+	b.WriteString(t.title("e4"))
 	b.WriteString("  ")
 	b.WriteString(t.section("LOBBY"))
 	b.WriteString("\n")
@@ -37,7 +37,7 @@ func RoomView(ctx Context, snapshot domain.GameSnapshot, nickname string, role d
 	t := newTheme(ctx.ANSI)
 	var b strings.Builder
 
-	b.WriteString(t.title("chessh"))
+	b.WriteString(t.title("e4"))
 	b.WriteString("  ")
 	b.WriteString(t.section("ROOM " + snapshot.RoomID))
 	b.WriteString("  ")

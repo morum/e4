@@ -9,7 +9,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		ListenAddr:  ":2222",
-		HostKeyPath: ".chessh_host_key",
+		HostKeyPath: ".e4_host_key",
 		LogLevel:    "info",
 	}
 }

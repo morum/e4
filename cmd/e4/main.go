@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"chessh/internal/app"
+	"github.com/morum/e4/internal/app"
 )
 
 func main() {
@@ -58,8 +58,8 @@ func runServe(args []string) error {
 }
 
 func printUsage() {
-	fmt.Println("chessh")
+	fmt.Println("e4")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  chessh serve [--listen :2222] [--host-key ./.chessh_host_key] [--log-level info]")
+	fmt.Println("  e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info]")
 }

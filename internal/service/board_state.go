@@ -3,7 +3,7 @@ package service
 import (
 	"strings"
 
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/domain"
 
 	"github.com/notnil/chess"
 )

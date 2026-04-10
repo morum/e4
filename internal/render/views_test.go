@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/domain"
 )
 
 func TestPromptUsesContextualModes(t *testing.T) {

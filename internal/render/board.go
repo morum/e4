@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/domain"
 )
 
 func renderBoard(ctx Context, board domain.BoardState) []string {

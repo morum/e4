@@ -1,6 +1,6 @@
 package render
 
-import "chessh/internal/domain"
+import "github.com/morum/e4/internal/domain"
 
 type StatusKind string
 

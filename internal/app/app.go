@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os"
 
-	"chessh/internal/service"
-	"chessh/internal/store/memory"
-	sshtransport "chessh/internal/transport/ssh"
+	"github.com/morum/e4/internal/service"
+	"github.com/morum/e4/internal/store/memory"
+	sshtransport "github.com/morum/e4/internal/transport/ssh"
 )
 
 type App struct {

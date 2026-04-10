@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"chessh/internal/domain"
-	"chessh/internal/render"
-	"chessh/internal/service"
+	"github.com/morum/e4/internal/domain"
+	"github.com/morum/e4/internal/render"
+	"github.com/morum/e4/internal/service"
 
 	gssh "github.com/gliderlabs/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
@@ -49,8 +49,8 @@ func NewServer(cfg Config, lobby *service.LobbyService) (*Server, error) {
 		Handler:     s.handleSession,
 		IdleTimeout: 8 * time.Hour,
 		MaxTimeout:  24 * time.Hour,
-		Version:     "SSH-2.0-chessh",
-		Banner:      "Welcome to chessh\n",
+		Version:     "SSH-2.0-e4",
+		Banner:      "Welcome to e4\n",
 	}
 	s.server.AddHostKey(signer)
 
@@ -96,7 +96,7 @@ func (s *Server) handleSession(sess gssh.Session) {
 	}
 
 	if len(sess.Command()) > 0 {
-		_, _ = io.WriteString(sess, "Use an interactive shell session for chessh.\n")
+		_, _ = io.WriteString(sess, "Use an interactive shell session for e4.\n")
 		if s.logger != nil {
 			s.logger.Warn("rejected exec session", "remote_addr", sess.RemoteAddr().String(), "command", sess.RawCommand())
 		}
@@ -113,7 +113,7 @@ func (s *Server) handleSession(sess gssh.Session) {
 		go client.watchWindows(winCh)
 	}
 
-	client.sendMessage("Welcome to chessh. Enter a nickname to get started.")
+	client.sendScreen(render.JoinBanner(client.ansi))
 	nickname, err := client.readLine("nickname> ")
 	if err != nil {
 		client.logDebug("nickname read failed", "error", err)

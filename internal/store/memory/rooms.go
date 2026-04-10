@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"chessh/internal/service"
+	"github.com/morum/e4/internal/service"
 )
 
 type RoomRepository struct {

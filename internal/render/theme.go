@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/domain"
 )
 
 type theme struct {

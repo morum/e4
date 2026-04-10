@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"chessh/internal/clock"
-	"chessh/internal/domain"
+	"github.com/morum/e4/internal/clock"
+	"github.com/morum/e4/internal/domain"
 
 	"github.com/notnil/chess"
 )

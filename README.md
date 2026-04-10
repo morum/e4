@@ -1,11 +1,11 @@
-# chessh
+# e4
 
-`chessh` is a terminal-first chess server served over SSH.
+`e4` is a terminal-first chess server served over SSH.
 
 The first cut is intentionally small but modular:
 
 - Go single-binary server
-- `chessh serve` entrypoint
+- `e4 serve` entrypoint
 - in-memory lobby and game rooms
 - create, join, and watch flows
 - SAN move input like `e4`, `Nf3`, `O-O`, `Qxe5+`
@@ -14,7 +14,7 @@ The first cut is intentionally small but modular:
 ## Run
 
 ```bash
-go run ./cmd/chessh serve --listen :2222 --log-level debug
+go run ./cmd/e4 serve --listen :2222 --log-level debug
 ```
 
 Then connect from another terminal:
@@ -53,7 +53,7 @@ help
 ## Project Layout
 
 ```text
-cmd/chessh              CLI entrypoint
+cmd/e4                  CLI entrypoint
 internal/app            app wiring and configuration
 internal/domain         pure game and lobby types
 internal/service        room and lobby services
