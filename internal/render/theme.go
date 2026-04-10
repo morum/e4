@@ -28,6 +28,10 @@ func (t theme) accent(text string) string {
 	return t.paint(text, "1", fg256(186))
 }
 
+func (t theme) emphasis(text string) string {
+	return t.paint(text, "1", fg256(229))
+}
+
 func (t theme) muted(text string) string {
 	return t.paint(text, fg256(71))
 }
@@ -105,6 +109,41 @@ func (t theme) playerName(color string, text string) string {
 		return t.paint(text, "1", fg256(255))
 	}
 	return t.paint(text, "1", fg256(117))
+}
+
+func (t theme) move(text string, latest bool) string {
+	styles := []string{}
+	if latest {
+		styles = append(styles, "1")
+	}
+
+	switch {
+	case strings.Contains(text, "#"):
+		styles = append(styles, fg256(16), bg256(203))
+	case strings.Contains(text, "+"):
+		styles = append(styles, fg256(203))
+	case strings.Contains(text, "x"):
+		styles = append(styles, fg256(186))
+	case strings.HasPrefix(text, "O-O"):
+		styles = append(styles, fg256(123))
+	case latest:
+		styles = append(styles, fg256(229))
+	default:
+		styles = append(styles, fg256(151))
+	}
+
+	return t.paint(text, styles...)
+}
+
+func (t theme) activeMarker(active bool) string {
+	if !active {
+		return t.dim("  ")
+	}
+	return t.accent(">>")
+}
+
+func (t theme) attention(text string) string {
+	return t.paint(text, "1", fg256(203))
 }
 
 func (t theme) paint(text string, codes ...string) string {

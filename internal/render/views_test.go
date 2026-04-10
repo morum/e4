@@ -76,6 +76,9 @@ func TestRoomViewUsesAnsiAndStatusFooter(t *testing.T) {
 	if !strings.Contains(view, "Recent Moves") {
 		t.Fatalf("expected moves panel in room view")
 	}
+	if !strings.Contains(view, "CHECK") {
+		t.Fatalf("expected active check indicator in room view")
+	}
 }
 
 func TestLobbyViewGroupsRoomSections(t *testing.T) {
@@ -91,6 +94,21 @@ func TestLobbyViewGroupsRoomSections(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected lobby view to contain %q", want)
 		}
+	}
+}
+
+func TestRenderMovesPanelStylesLatestCaptureAndMate(t *testing.T) {
+	ctx := Context{Width: 120, ANSI: true}
+	snapshot := sampleSnapshot()
+	snapshot.Moves = []string{"e4", "e5", "Qxf7#"}
+
+	lines := renderMovesPanel(ctx, snapshot)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "Qxf7#") {
+		t.Fatalf("expected latest move text in moves panel")
+	}
+	if !strings.Contains(joined, "\x1b[") {
+		t.Fatalf("expected ANSI styling in moves panel")
 	}
 }
 
@@ -112,6 +130,7 @@ func sampleSnapshot() domain.GameSnapshot {
 			},
 			LastMoveFrom: "e2",
 			LastMoveTo:   "e4",
+			CheckSquare:  "e8",
 		},
 		Moves:         []string{"e4", "e5", "Nf3"},
 		WhiteTimeLeft: 2*time.Minute + 31*time.Second,

@@ -351,7 +351,10 @@ func (c *clientSession) attachRoom(room service.GameRoom, role domain.Role) {
 
 	sub := room.Subscribe()
 	token := atomic.AddUint64(&c.roomToken, 1)
-	initialSnapshot := room.Snapshot()
+	initialSnapshot, ok := <-sub.Updates
+	if !ok {
+		return
+	}
 
 	c.mu.Lock()
 	c.room = room
@@ -502,15 +505,17 @@ func (c *clientSession) readLine(prompt string) (string, error) {
 	return line, nil
 }
 
-func (c *clientSession) setSize(width, height int) {
+func (c *clientSession) setSize(width, height int) bool {
 	if width <= 0 || height <= 0 {
-		return
+		return false
 	}
 	c.mu.Lock()
+	changed := c.width != width || c.height != height
 	c.width = width
 	c.height = height
 	c.mu.Unlock()
 	_ = c.term.SetSize(width, height)
+	return changed
 }
 
 func (c *clientSession) watchWindows(winCh <-chan gssh.Window) {
@@ -522,8 +527,9 @@ func (c *clientSession) watchWindows(winCh <-chan gssh.Window) {
 			if !ok {
 				return
 			}
-			c.setSize(win.Width, win.Height)
-			c.renderActiveView()
+			if c.setSize(win.Width, win.Height) {
+				c.renderActiveView()
+			}
 		}
 	}
 }

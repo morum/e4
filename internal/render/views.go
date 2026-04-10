@@ -157,6 +157,8 @@ func renderRoomStatus(ctx Context, snapshot domain.GameSnapshot) string {
 	t := newTheme(ctx.ANSI)
 	whiteActive := snapshot.Status == domain.RoomStatusActive && snapshot.Turn == "white"
 	blackActive := snapshot.Status == domain.RoomStatusActive && snapshot.Turn == "black"
+	whiteInCheck := snapshot.Board.CheckSquare == "e1"
+	blackInCheck := snapshot.Board.CheckSquare == "e8"
 
 	statusText := waitingText(snapshot)
 	if snapshot.Outcome != "" {
@@ -166,8 +168,18 @@ func renderRoomStatus(ctx Context, snapshot domain.GameSnapshot) string {
 	}
 
 	return strings.Join([]string{
-		fmt.Sprintf("White: %-14s %s", t.playerName("white", fallback(snapshot.WhiteName, "open")), t.clock(formatDuration(snapshot.WhiteTimeLeft), whiteActive, snapshot.WhiteTimeLeft)),
-		fmt.Sprintf("Black: %-14s %s", t.playerName("black", fallback(snapshot.BlackName, "open")), t.clock(formatDuration(snapshot.BlackTimeLeft), blackActive, snapshot.BlackTimeLeft)),
+		fmt.Sprintf("%s White: %-14s %s%s",
+			t.activeMarker(whiteActive),
+			t.playerName("white", fallback(snapshot.WhiteName, "open")),
+			t.clock(formatDuration(snapshot.WhiteTimeLeft), whiteActive, snapshot.WhiteTimeLeft),
+			checkSuffix(t, whiteInCheck),
+		),
+		fmt.Sprintf("%s Black: %-14s %s%s",
+			t.activeMarker(blackActive),
+			t.playerName("black", fallback(snapshot.BlackName, "open")),
+			t.clock(formatDuration(snapshot.BlackTimeLeft), blackActive, snapshot.BlackTimeLeft),
+			checkSuffix(t, blackInCheck),
+		),
 		fmt.Sprintf("Watchers: %d  %s", snapshot.WatcherCount, t.accent(statusText)),
 	}, "\n")
 }
@@ -194,17 +206,10 @@ func renderMovesPanel(ctx Context, snapshot domain.GameSnapshot) []string {
 
 	for i := start; i < len(snapshot.Moves); i += 2 {
 		moveNo := i/2 + 1
-		white := snapshot.Moves[i]
+		white := styleMoveText(t, snapshot.Moves[i], i == len(snapshot.Moves)-1)
 		black := ""
 		if i+1 < len(snapshot.Moves) {
-			black = snapshot.Moves[i+1]
-		}
-		if i == len(snapshot.Moves)-1 || i+1 == len(snapshot.Moves)-1 {
-			if black != "" {
-				black = t.accent(black)
-			} else {
-				white = t.accent(white)
-			}
+			black = styleMoveText(t, snapshot.Moves[i+1], i+1 == len(snapshot.Moves)-1)
 		}
 		lines = append(lines, fmt.Sprintf("  %2d. %-9s %s", moveNo, white, black))
 	}
@@ -234,6 +239,9 @@ func renderFooter(ctx Context, fallbackStatus, hint string) string {
 func roomStatusMessage(snapshot domain.GameSnapshot) string {
 	if snapshot.LastEvent != "" {
 		return snapshot.LastEvent
+	}
+	if snapshot.Board.CheckSquare != "" && snapshot.Status == domain.RoomStatusActive {
+		return fmt.Sprintf("%s is in check.", capitalize(snapshot.Turn))
 	}
 	if snapshot.Status == domain.RoomStatusWaiting {
 		return waitingText(snapshot)
@@ -353,4 +361,22 @@ func roleLabel(role domain.Role) string {
 		return "lobby"
 	}
 	return string(role)
+}
+
+func styleMoveText(t theme, move string, latest bool) string {
+	return t.move(move, latest)
+}
+
+func checkSuffix(t theme, inCheck bool) string {
+	if !inCheck {
+		return ""
+	}
+	return "  " + t.attention("CHECK")
+}
+
+func capitalize(value string) string {
+	if value == "" {
+		return ""
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
 }
