@@ -31,9 +31,22 @@ type RoomSummary struct {
 	WhiteName    string
 	BlackName    string
 	WatcherCount int
+	HasOpenSeat  bool
 	Turn         string
 	Outcome      string
 	Method       string
+}
+
+type BoardPiece struct {
+	Color  string
+	Symbol string
+}
+
+type BoardState struct {
+	Squares      map[string]BoardPiece
+	LastMoveFrom string
+	LastMoveTo   string
+	CheckSquare  string
 }
 
 type GameSnapshot struct {
@@ -46,7 +59,7 @@ type GameSnapshot struct {
 	BlackName     string
 	WatcherCount  int
 	Turn          string
-	Board         string
+	Board         BoardState
 	Moves         []string
 	WhiteTimeLeft time.Duration
 	BlackTimeLeft time.Duration
@@ -63,6 +76,7 @@ func (s GameSnapshot) Summary() RoomSummary {
 		WhiteName:    s.WhiteName,
 		BlackName:    s.BlackName,
 		WatcherCount: s.WatcherCount,
+		HasOpenSeat:  s.IsSeatOpen(),
 		Turn:         s.Turn,
 		Outcome:      s.Outcome,
 		Method:       s.Method,

@@ -46,22 +46,24 @@ type Room struct {
 }
 
 type roomState struct {
-	logger      *slog.Logger
-	timeControl domain.TimeControl
-	status      domain.RoomStatus
-	game        *chess.Game
-	notation    chess.AlgebraicNotation
-	clock       clock.State
-	white       *domain.Participant
-	black       *domain.Participant
-	watchers    map[string]domain.Participant
-	moves       []string
-	outcome     string
-	method      string
-	lastEvent   string
-	closed      bool
-	seq         int
-	subs        map[int]chan domain.GameSnapshot
+	logger       *slog.Logger
+	timeControl  domain.TimeControl
+	status       domain.RoomStatus
+	game         *chess.Game
+	notation     chess.AlgebraicNotation
+	clock        clock.State
+	white        *domain.Participant
+	black        *domain.Participant
+	watchers     map[string]domain.Participant
+	moves        []string
+	lastMoveFrom string
+	lastMoveTo   string
+	outcome      string
+	method       string
+	lastEvent    string
+	closed       bool
+	seq          int
+	subs         map[int]chan domain.GameSnapshot
 }
 
 type subscribeReq struct {
@@ -373,6 +375,8 @@ func (s *roomState) submitMove(participantID, move string) error {
 	}
 
 	s.moves = append(s.moves, moveText)
+	s.lastMoveFrom = parsedMove.S1().String()
+	s.lastMoveTo = parsedMove.S2().String()
 	s.clock.Switch(turn, time.Now())
 	s.lastEvent = fmt.Sprintf("%s played %s.", nickname, moveText)
 	s.log("move submitted", "session_id", participantID, "nickname", nickname, "move", moveText, "turn_next", s.game.Position().Turn().String())
@@ -462,8 +466,8 @@ func (s *roomState) snapshot(roomID string, now time.Time) domain.GameSnapshot {
 		Status:        s.status,
 		TimeControl:   s.timeControl,
 		WatcherCount:  len(s.watchers),
-		Turn:          s.game.Position().Turn().String(),
-		Board:         s.game.Position().Board().Draw(),
+		Turn:          strings.ToLower(s.game.Position().Turn().Name()),
+		Board:         buildBoardState(s.game.Position(), s.lastMoveFrom, s.lastMoveTo),
 		Moves:         append([]string(nil), s.moves...),
 		WhiteTimeLeft: whiteTime,
 		BlackTimeLeft: blackTime,

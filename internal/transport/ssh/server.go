@@ -105,7 +105,7 @@ func (s *Server) handleSession(sess gssh.Session) {
 	}
 
 	pty, winCh, hasPTY := sess.Pty()
-	client := newClientSession(sess, hasPTY, s.lobby, s.logger)
+	client := newClientSession(sess, hasPTY, pty.Term, s.lobby, s.logger)
 	defer client.close()
 	client.logInfo("session ready", "session_id", client.id, "remote_addr", sess.RemoteAddr().String(), "ssh_user", sess.User(), "has_pty", hasPTY)
 	if hasPTY {
@@ -142,7 +142,8 @@ func (s *Server) handleSession(sess gssh.Session) {
 				return
 			}
 			client.logDebug("command failed", "line", line, "error", err)
-			client.sendMessage(err.Error())
+			client.setStatus(render.StatusError, err.Error())
+			client.renderActiveView()
 		}
 	}
 
@@ -157,6 +158,7 @@ type clientSession struct {
 	nickname string
 	sess     gssh.Session
 	hasPTY   bool
+	ansi     bool
 	lobby    *service.LobbyService
 	done     chan struct{}
 	term     *term.Terminal
@@ -164,6 +166,9 @@ type clientSession struct {
 	logger   *slog.Logger
 
 	mu          sync.RWMutex
+	width       int
+	height      int
+	status      render.StatusLine
 	roomID      string
 	room        service.GameRoom
 	role        domain.Role
@@ -172,15 +177,18 @@ type clientSession struct {
 	roomToken   uint64
 }
 
-func newClientSession(sess gssh.Session, hasPTY bool, lobby *service.LobbyService, logger *slog.Logger) *clientSession {
+func newClientSession(sess gssh.Session, hasPTY bool, termName string, lobby *service.LobbyService, logger *slog.Logger) *clientSession {
 	c := &clientSession{
 		id:     randomID(),
 		sess:   sess,
 		hasPTY: hasPTY,
+		ansi:   detectANSI(hasPTY, termName),
 		lobby:  lobby,
 		done:   make(chan struct{}),
 		term:   term.NewTerminal(sess, ""),
 		logger: logger,
+		width:  100,
+		height: 32,
 	}
 	return c
 }
@@ -215,16 +223,21 @@ func (c *clientSession) handleLine(line string) error {
 func (c *clientSession) handleRoomLine(command, line string) error {
 	switch command {
 	case "help":
-		c.sendMessage(render.HelpText(true))
+		c.setStatus(render.StatusInfo, render.HelpText(true))
+		c.renderCurrentRoom()
 		return nil
 	case "board":
+		c.clearStatus()
 		c.renderCurrentRoom()
 		return nil
 	case "leave":
+		roomID := c.currentRoomID()
 		c.leaveCurrentRoom()
+		c.setStatus(render.StatusInfo, fmt.Sprintf("Left room %s.", roomID))
 		c.renderLobby()
 		return nil
 	case "resign":
+		c.clearStatus()
 		return c.resignCurrentGame()
 	case "quit", "exit":
 		return c.exitSession()
@@ -234,15 +247,18 @@ func (c *clientSession) handleRoomLine(command, line string) error {
 		return fmt.Errorf("watchers cannot move")
 	}
 
+	c.clearStatus()
 	return c.playMove(line)
 }
 
 func (c *clientSession) handleLobbyLine(command string, args []string) error {
 	switch command {
 	case "help":
-		c.sendMessage(render.HelpText(false))
+		c.setStatus(render.StatusInfo, render.HelpText(false))
+		c.renderLobby()
 		return nil
 	case "list":
+		c.clearStatus()
 		c.renderLobby()
 		return nil
 	case "create":
@@ -273,31 +289,37 @@ func (c *clientSession) createRoom(rawTC string) error {
 		return err
 	}
 
+	c.clearStatus()
 	room, role, err := c.lobby.CreateGame(c.participant(), tc)
 	if err != nil {
 		return err
 	}
 
+	c.setStatus(render.StatusSuccess, fmt.Sprintf("Created room %s as White.", room.ID()))
 	c.attachRoom(room, role)
 	return nil
 }
 
 func (c *clientSession) joinRoom(roomID string) error {
+	c.clearStatus()
 	room, role, err := c.lobby.JoinGame(roomID, c.participant())
 	if err != nil {
 		return err
 	}
 
+	c.setStatus(render.StatusSuccess, fmt.Sprintf("Joined room %s as %s.", room.ID(), role))
 	c.attachRoom(room, role)
 	return nil
 }
 
 func (c *clientSession) watchRoom(roomID string) error {
+	c.clearStatus()
 	room, err := c.lobby.WatchGame(roomID, c.participant())
 	if err != nil {
 		return err
 	}
 
+	c.setStatus(render.StatusInfo, fmt.Sprintf("Watching room %s.", room.ID()))
 	c.attachRoom(room, domain.RoleWatcher)
 	return nil
 }
@@ -329,14 +351,16 @@ func (c *clientSession) attachRoom(room service.GameRoom, role domain.Role) {
 
 	sub := room.Subscribe()
 	token := atomic.AddUint64(&c.roomToken, 1)
+	initialSnapshot := room.Snapshot()
 
 	c.mu.Lock()
 	c.room = room
 	c.roomID = room.ID()
 	c.role = role
-	c.snapshot = nil
+	c.snapshot = &initialSnapshot
 	c.unsubscribe = sub.Cancel
 	c.mu.Unlock()
+	c.renderCurrentRoom()
 
 	go func(roomID string, role domain.Role, token uint64, updates <-chan domain.GameSnapshot) {
 		for snapshot := range updates {
@@ -346,8 +370,9 @@ func (c *clientSession) attachRoom(room service.GameRoom, role domain.Role) {
 			c.mu.Lock()
 			s := snapshot
 			c.snapshot = &s
+			ctx := c.renderContextLocked(role)
 			c.mu.Unlock()
-			c.sendScreen(render.RoomView(snapshot, c.nickname, role))
+			c.sendScreen(render.RoomView(ctx, snapshot, c.nickname, role))
 		}
 
 		c.mu.Lock()
@@ -385,19 +410,23 @@ func (c *clientSession) leaveCurrentRoom() {
 
 func (c *clientSession) renderLobby() {
 	rooms := c.lobby.ListGames()
-	c.sendScreen(render.LobbyView(c.nickname, rooms))
+	c.mu.RLock()
+	ctx := c.renderContextLocked(domain.RoleNone)
+	c.mu.RUnlock()
+	c.sendScreen(render.LobbyView(ctx, c.nickname, rooms))
 }
 
 func (c *clientSession) renderCurrentRoom() {
 	c.mu.RLock()
 	snapshot := c.snapshot
 	role := c.role
+	ctx := c.renderContextLocked(role)
 	c.mu.RUnlock()
 	if snapshot == nil {
 		c.renderLobby()
 		return
 	}
-	c.sendScreen(render.RoomView(*snapshot, c.nickname, role))
+	c.sendScreen(render.RoomView(ctx, *snapshot, c.nickname, role))
 }
 
 func (c *clientSession) currentRoom() service.GameRoom {
@@ -415,7 +444,11 @@ func (c *clientSession) inRoom() bool {
 func (c *clientSession) currentPrompt() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return render.Prompt(c.snapshot, c.role)
+	if c.snapshot == nil && c.roomID != "" {
+		placeholder := &domain.GameSnapshot{RoomID: c.roomID}
+		return render.Prompt(c.renderContextLocked(c.role), placeholder, c.role)
+	}
+	return render.Prompt(c.renderContextLocked(c.role), c.snapshot, c.role)
 }
 
 func (c *clientSession) currentRole() domain.Role {
@@ -473,6 +506,10 @@ func (c *clientSession) setSize(width, height int) {
 	if width <= 0 || height <= 0 {
 		return
 	}
+	c.mu.Lock()
+	c.width = width
+	c.height = height
+	c.mu.Unlock()
 	_ = c.term.SetSize(width, height)
 }
 
@@ -486,6 +523,7 @@ func (c *clientSession) watchWindows(winCh <-chan gssh.Window) {
 				return
 			}
 			c.setSize(win.Width, win.Height)
+			c.renderActiveView()
 		}
 	}
 }
@@ -508,9 +546,58 @@ func (c *clientSession) participant() domain.Participant {
 	return domain.Participant{ID: c.id, Nickname: c.nickname}
 }
 
+func (c *clientSession) currentRoomID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.roomID
+}
+
+func (c *clientSession) setStatus(kind render.StatusKind, message string) {
+	c.mu.Lock()
+	c.status = render.StatusLine{Kind: kind, Message: strings.TrimSpace(message)}
+	c.mu.Unlock()
+}
+
+func (c *clientSession) clearStatus() {
+	c.mu.Lock()
+	c.status = render.StatusLine{}
+	c.mu.Unlock()
+}
+
+func (c *clientSession) renderActiveView() {
+	if c.inRoom() {
+		c.renderCurrentRoom()
+		return
+	}
+	c.renderLobby()
+}
+
+func (c *clientSession) renderContextLocked(role domain.Role) render.Context {
+	return render.Context{
+		Width:       c.width,
+		Height:      c.height,
+		ANSI:        c.ansi,
+		Role:        role,
+		Orientation: render.OrientationForRole(role),
+		Status:      c.status,
+	}
+}
+
 func (c *clientSession) exitSession() error {
 	_ = c.sess.Exit(0)
 	return io.EOF
+}
+
+func detectANSI(hasPTY bool, termName string) bool {
+	if !hasPTY {
+		return false
+	}
+
+	if termName == "" || termName == "dumb" {
+		return false
+	}
+
+	return true
 }
 
 func randomID() string {
