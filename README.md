@@ -4,6 +4,8 @@
 
 You run the server, connect over SSH, pick a nickname, and play or watch games.
 
+![e4 screenshot](./screenshot.png)
+
 ## What It Does
 
 - serves chess over SSH
@@ -11,6 +13,7 @@ You run the server, connect over SSH, pick a nickname, and play or watch games.
 - supports time controls like `10|0`, `3|2`, and `15|10`
 - accepts SAN moves like `e4`, `Nf3`, `O-O`, and `Qxe5+`
 - shows a live board, clocks, and move list in the terminal
+- supports tab completion for room IDs in `join` and `watch`
 
 ## Quick Start
 
@@ -52,6 +55,11 @@ watch ABC123
 help
 quit
 ```
+
+Tips:
+
+- press `Tab` after `join ` or `watch ` to autocomplete room IDs
+- press `Tab` again on the same partial input to list matching room IDs
 
 ### Room
 

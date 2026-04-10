@@ -19,7 +19,8 @@ func LobbyView(ctx Context, nickname string, rooms []domain.RoomSummary) string 
 	b.WriteString(t.dim(strings.Repeat("=", 72)))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("Connected as %s\n", t.accent(nickname)))
-	b.WriteString(fmt.Sprintf("Quick start: %s\n\n", t.muted("create 10|0  |  join <room>  |  watch <room>")))
+	b.WriteString(fmt.Sprintf("Quick start: %s\n", t.muted("create 10|0  |  join <room>  |  watch <room>")))
+	b.WriteString(fmt.Sprintf("Autocomplete: %s\n\n", t.muted("Tab completes room IDs for join/watch")))
 
 	openRooms, activeRooms, finishedRooms := splitRooms(rooms)
 	b.WriteString(renderLobbySection(ctx, "Open Rooms", "Joinable seats ready now.", openRooms))
@@ -72,7 +73,7 @@ func HelpText(inRoom bool) string {
 	if inRoom {
 		return "Room commands: help, board, leave, resign, quit, or enter a SAN move like e4 or O-O."
 	}
-	return "Lobby commands: list, create <tc>, join <id>, watch <id>, help, quit."
+	return "Lobby commands: list, create <tc>, join <id>, watch <id>, help, quit. Tab autocompletes room IDs for join/watch; press Tab again to list matches."
 }
 
 func Prompt(_ Context, snapshot *domain.GameSnapshot, role domain.Role) string {

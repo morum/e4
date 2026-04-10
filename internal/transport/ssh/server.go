@@ -156,6 +156,7 @@ type clientSession struct {
 	logger   *slog.Logger
 
 	mu          sync.RWMutex
+	autoQuery   string
 	width       int
 	height      int
 	status      render.StatusLine
@@ -180,6 +181,7 @@ func newClientSession(sess gssh.Session, hasPTY bool, termName string, lobby *se
 		width:  100,
 		height: 32,
 	}
+	c.term.AutoCompleteCallback = c.autoCompleteLine
 	return c
 }
 
@@ -271,6 +273,31 @@ func (c *clientSession) handleLobbyLine(command string, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}
+}
+
+func (c *clientSession) autoCompleteLine(line string, pos int, key rune) (string, int, bool) {
+	if key != '\t' || c.inRoom() || pos != len(line) {
+		c.clearAutoCompleteQuery()
+		return "", 0, false
+	}
+
+	completion := autoCompleteRoomID(line, pos, c.roomIDs())
+	if !completion.ok {
+		c.clearAutoCompleteQuery()
+		return "", 0, false
+	}
+	if completion.showMatches {
+		if c.shouldShowAutoCompleteMatches(completion.query) {
+			c.showAutoCompleteMatches(line, completion.matches)
+			c.clearAutoCompleteQuery()
+		} else {
+			c.setAutoCompleteQuery(completion.query)
+		}
+		return line, pos, true
+	}
+
+	c.clearAutoCompleteQuery()
+	return completion.line, completion.pos, true
 }
 
 func (c *clientSession) createRoom(rawTC string) error {
@@ -422,10 +449,51 @@ func (c *clientSession) renderCurrentRoom() {
 	c.sendScreen(render.RoomView(ctx, *snapshot, c.nickname, role))
 }
 
+func (c *clientSession) setAutoCompleteQuery(query string) {
+	c.mu.Lock()
+	c.autoQuery = query
+	c.mu.Unlock()
+}
+
+func (c *clientSession) clearAutoCompleteQuery() {
+	c.mu.Lock()
+	c.autoQuery = ""
+	c.mu.Unlock()
+}
+
+func (c *clientSession) shouldShowAutoCompleteMatches(query string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return query != "" && c.autoQuery == query
+}
+
+func (c *clientSession) showAutoCompleteMatches(line string, matches []string) {
+	if len(matches) == 0 {
+		return
+	}
+
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(strings.Join(matches, "  "))
+	b.WriteString("\n")
+	b.WriteString(c.currentPrompt())
+	b.WriteString(line)
+	c.writeTerminal(b.String())
+}
+
 func (c *clientSession) currentRoom() service.GameRoom {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.room
+}
+
+func (c *clientSession) roomIDs() []string {
+	rooms := c.lobby.ListGames()
+	ids := make([]string, 0, len(rooms))
+	for _, room := range rooms {
+		ids = append(ids, room.ID)
+	}
+	return ids
 }
 
 func (c *clientSession) inRoom() bool {
@@ -628,6 +696,83 @@ func loadOrCreateHostKey(path string) (cryptossh.Signer, error) {
 	}
 
 	return cryptossh.NewSignerFromKey(key)
+}
+
+type roomIDCompletion struct {
+	line        string
+	pos         int
+	query       string
+	matches     []string
+	showMatches bool
+	ok          bool
+}
+
+func autoCompleteRoomID(line string, pos int, roomIDs []string) roomIDCompletion {
+	prefix := line[:pos]
+	trimmedPrefix := strings.TrimLeft(prefix, " ")
+	leadingWhitespace := prefix[:len(prefix)-len(trimmedPrefix)]
+	fields := strings.Fields(trimmedPrefix)
+	if len(fields) == 0 || len(fields) > 2 {
+		return roomIDCompletion{}
+	}
+
+	command := strings.ToLower(fields[0])
+	if command != "join" && command != "watch" {
+		return roomIDCompletion{}
+	}
+
+	partialID := ""
+	if len(fields) == 1 {
+		if !strings.HasSuffix(prefix, " ") {
+			return roomIDCompletion{}
+		}
+	} else {
+		partialID = strings.ToUpper(fields[1])
+	}
+
+	matches := matchingRoomIDs(roomIDs, partialID)
+	if len(matches) == 0 {
+		return roomIDCompletion{}
+	}
+
+	completion := sharedPrefix(matches)
+	if completion == partialID && len(matches) > 1 {
+		return roomIDCompletion{query: command + " " + partialID, matches: matches, showMatches: true, ok: true}
+	}
+
+	completed := leadingWhitespace + command + " " + completion
+	if len(matches) == 1 {
+		completed += " "
+	}
+
+	return roomIDCompletion{line: completed, pos: len(completed), ok: true}
+}
+
+func matchingRoomIDs(roomIDs []string, partialID string) []string {
+	matches := make([]string, 0, len(roomIDs))
+	for _, roomID := range roomIDs {
+		if strings.HasPrefix(roomID, partialID) {
+			matches = append(matches, roomID)
+		}
+	}
+	return matches
+}
+
+func sharedPrefix(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	prefix := values[0]
+	for _, value := range values[1:] {
+		for !strings.HasPrefix(value, prefix) {
+			prefix = prefix[:len(prefix)-1]
+			if prefix == "" {
+				return ""
+			}
+		}
+	}
+	return prefix
 }
 
 func (s *Server) logInfo(msg string, attrs ...any) {
