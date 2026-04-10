@@ -309,37 +309,8 @@ func (s *roomState) addWatcher(participant domain.Participant) error {
 }
 
 func (s *roomState) leave(participantID string) bool {
-	if s.white != nil && s.white.ID == participantID {
-		if s.status == domain.RoomStatusActive {
-			s.finishByResignation(chess.White)
-			s.lastEvent = fmt.Sprintf("%s left and resigned.", s.white.Nickname)
-			s.log("player left active game", "session_id", participantID, "role", domain.RoleWhite)
-		} else {
-			s.lastEvent = fmt.Sprintf("%s left the room.", s.white.Nickname)
-			s.log("player left waiting room", "session_id", participantID, "role", domain.RoleWhite)
-			s.white = nil
-			s.ensureWaiting()
-		}
-		if s.status == domain.RoomStatusFinished {
-			s.white = nil
-		}
-	}
-
-	if s.black != nil && s.black.ID == participantID {
-		if s.status == domain.RoomStatusActive {
-			s.finishByResignation(chess.Black)
-			s.lastEvent = fmt.Sprintf("%s left and resigned.", s.black.Nickname)
-			s.log("player left active game", "session_id", participantID, "role", domain.RoleBlack)
-		} else {
-			s.lastEvent = fmt.Sprintf("%s left the room.", s.black.Nickname)
-			s.log("player left waiting room", "session_id", participantID, "role", domain.RoleBlack)
-			s.black = nil
-			s.ensureWaiting()
-		}
-		if s.status == domain.RoomStatusFinished {
-			s.black = nil
-		}
-	}
+	s.leaveSeat(&s.white, participantID, chess.White, domain.RoleWhite)
+	s.leaveSeat(&s.black, participantID, chess.Black, domain.RoleBlack)
 
 	if watcher, ok := s.watchers[participantID]; ok {
 		delete(s.watchers, participantID)
@@ -348,6 +319,28 @@ func (s *roomState) leave(participantID string) bool {
 	}
 
 	return s.participantCount() == 0
+}
+
+func (s *roomState) leaveSeat(seat **domain.Participant, participantID string, color chess.Color, role domain.Role) {
+	participant := *seat
+	if participant == nil || participant.ID != participantID {
+		return
+	}
+
+	if s.status == domain.RoomStatusActive {
+		s.finishByResignation(color)
+		s.lastEvent = fmt.Sprintf("%s left and resigned.", participant.Nickname)
+		s.log("player left active game", "session_id", participantID, "role", role)
+	} else {
+		s.lastEvent = fmt.Sprintf("%s left the room.", participant.Nickname)
+		s.log("player left waiting room", "session_id", participantID, "role", role)
+		*seat = nil
+		s.ensureWaiting()
+	}
+
+	if s.status == domain.RoomStatusFinished {
+		*seat = nil
+	}
 }
 
 func (s *roomState) submitMove(participantID, move string) error {

@@ -206,30 +206,38 @@ func (c *clientSession) handleLine(line string) error {
 	args := fields[1:]
 
 	if c.inRoom() {
-		switch command {
-		case "help":
-			c.sendMessage(render.HelpText(true))
-			return nil
-		case "board":
-			c.renderCurrentRoom()
-			return nil
-		case "leave":
-			c.leaveCurrentRoom()
-			c.renderLobby()
-			return nil
-		case "resign":
-			return c.resignCurrentGame()
-		case "quit", "exit":
-			_ = c.sess.Exit(0)
-			return io.EOF
-		}
-
-		if c.currentRole() == domain.RoleWatcher {
-			return fmt.Errorf("watchers cannot move")
-		}
-		return c.playMove(line)
+		return c.handleRoomLine(command, line)
 	}
 
+	return c.handleLobbyLine(command, args)
+}
+
+func (c *clientSession) handleRoomLine(command, line string) error {
+	switch command {
+	case "help":
+		c.sendMessage(render.HelpText(true))
+		return nil
+	case "board":
+		c.renderCurrentRoom()
+		return nil
+	case "leave":
+		c.leaveCurrentRoom()
+		c.renderLobby()
+		return nil
+	case "resign":
+		return c.resignCurrentGame()
+	case "quit", "exit":
+		return c.exitSession()
+	}
+
+	if c.currentRole() == domain.RoleWatcher {
+		return fmt.Errorf("watchers cannot move")
+	}
+
+	return c.playMove(line)
+}
+
+func (c *clientSession) handleLobbyLine(command string, args []string) error {
 	switch command {
 	case "help":
 		c.sendMessage(render.HelpText(false))
@@ -253,8 +261,7 @@ func (c *clientSession) handleLine(line string) error {
 		}
 		return c.watchRoom(strings.ToUpper(args[0]))
 	case "quit", "exit":
-		_ = c.sess.Exit(0)
-		return io.EOF
+		return c.exitSession()
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}
@@ -266,7 +273,7 @@ func (c *clientSession) createRoom(rawTC string) error {
 		return err
 	}
 
-	room, role, err := c.lobby.CreateGame(domain.Participant{ID: c.id, Nickname: c.nickname}, tc)
+	room, role, err := c.lobby.CreateGame(c.participant(), tc)
 	if err != nil {
 		return err
 	}
@@ -276,7 +283,7 @@ func (c *clientSession) createRoom(rawTC string) error {
 }
 
 func (c *clientSession) joinRoom(roomID string) error {
-	room, role, err := c.lobby.JoinGame(roomID, domain.Participant{ID: c.id, Nickname: c.nickname})
+	room, role, err := c.lobby.JoinGame(roomID, c.participant())
 	if err != nil {
 		return err
 	}
@@ -286,7 +293,7 @@ func (c *clientSession) joinRoom(roomID string) error {
 }
 
 func (c *clientSession) watchRoom(roomID string) error {
-	room, err := c.lobby.WatchGame(roomID, domain.Participant{ID: c.id, Nickname: c.nickname})
+	room, err := c.lobby.WatchGame(roomID, c.participant())
 	if err != nil {
 		return err
 	}
@@ -497,6 +504,15 @@ func (c *clientSession) logDebug(msg string, attrs ...any) {
 	c.logger.Debug(msg, attrs...)
 }
 
+func (c *clientSession) participant() domain.Participant {
+	return domain.Participant{ID: c.id, Nickname: c.nickname}
+}
+
+func (c *clientSession) exitSession() error {
+	_ = c.sess.Exit(0)
+	return io.EOF
+}
+
 func randomID() string {
 	buf := make([]byte, 8)
 	if _, err := rand.Read(buf); err != nil {
@@ -518,8 +534,11 @@ func loadOrCreateHostKey(path string) (cryptossh.Signer, error) {
 	}
 
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && filepath.Dir(path) != "." {
-		return nil, err
+	dir := filepath.Dir(path)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
 	}
 	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
 		return nil, err
