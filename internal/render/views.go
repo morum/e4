@@ -31,40 +31,47 @@ func LobbyView(ctx Context, nickname string, rooms []domain.RoomSummary) string 
 	b.WriteString("\n")
 	b.WriteString(renderFooter(ctx, lobbyStatusMessage(rooms), "Commands: list, create <tc>, join <id>, watch <id>, help, quit"))
 
-	return strings.TrimRight(b.String(), "\n")
+	return CenterBlock(strings.TrimRight(b.String(), "\n"), ctx.Width)
 }
 
 func RoomView(ctx Context, snapshot domain.GameSnapshot, nickname string, role domain.Role) string {
 	t := newTheme(ctx.ANSI)
 	var b strings.Builder
 
-	b.WriteString(t.title("e4"))
-	b.WriteString("  ")
-	b.WriteString(t.section("ROOM " + snapshot.RoomID))
-	b.WriteString("  ")
-	b.WriteString(t.badge(snapshot.Status))
-	b.WriteString("\n")
-	b.WriteString(t.dim(strings.Repeat("=", 72)))
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("You: %s (%s)  Time: %s\n",
+	// Header
+	var header strings.Builder
+	header.WriteString(t.title("e4"))
+	header.WriteString("  ")
+	header.WriteString(t.section("ROOM " + snapshot.RoomID))
+	header.WriteString("  ")
+	header.WriteString(t.badge(snapshot.Status))
+	header.WriteString("\n")
+	header.WriteString(t.dim(strings.Repeat("=", 72)))
+	header.WriteString("\n")
+	header.WriteString(fmt.Sprintf("You: %s (%s)  Time: %s\n",
 		t.accent(nickname),
 		t.role(role, roleLabel(role)),
 		t.accent(snapshot.TimeControl.String()),
 	))
-	b.WriteString(renderRoomStatus(ctx, snapshot))
+	header.WriteString(renderRoomStatus(ctx, snapshot))
+	b.WriteString(CenterBlock(header.String(), ctx.Width))
 	b.WriteString("\n")
 
+	// Board (centered in terminal) + moves panel to the right
 	boardLines := renderBoard(ctx, snapshot.Board)
 	movesLines := renderMovesPanel(ctx, snapshot)
+	boardLines = centerLines(boardLines, ctx.Width)
 	if ctx.Layout() == LayoutWide {
-		b.WriteString(joinColumns(boardLines, movesLines, 34))
+		b.WriteString(joinColumns(boardLines, movesLines, boardColumnWidth(boardLines)))
 	} else {
 		b.WriteString(strings.Join(boardLines, "\n"))
 		b.WriteString("\n\n")
-		b.WriteString(strings.Join(movesLines, "\n"))
+		b.WriteString(CenterBlock(strings.Join(movesLines, "\n"), ctx.Width))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(renderFooter(ctx, roomStatusMessage(snapshot), roomHint(snapshot, role)))
+
+	// Footer
+	b.WriteString(CenterBlock(renderFooter(ctx, roomStatusMessage(snapshot), roomHint(snapshot, role)), ctx.Width))
 
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -315,6 +322,16 @@ func waitingText(snapshot domain.GameSnapshot) string {
 	return "Waiting for players."
 }
 
+func boardColumnWidth(lines []string) int {
+	max := 0
+	for _, line := range lines {
+		if w := visibleWidth(line); w > max {
+			max = w
+		}
+	}
+	return max
+}
+
 func joinColumns(left, right []string, leftWidth int) string {
 	rowCount := len(left)
 	if len(right) > rowCount {
@@ -331,7 +348,14 @@ func joinColumns(left, right []string, leftWidth int) string {
 		if i < len(right) {
 			rightLine = right[i]
 		}
-		b.WriteString(fmt.Sprintf("%-*s  %s\n", leftWidth, leftLine, rightLine))
+		pad := leftWidth - visibleWidth(leftLine)
+		if pad < 0 {
+			pad = 0
+		}
+		b.WriteString(leftLine)
+		b.WriteString(strings.Repeat(" ", pad+2))
+		b.WriteString(rightLine)
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
