@@ -17,10 +17,11 @@ You run the server, connect over SSH, pick a nickname, and play or watch games.
 
 ## Quick Start
 
-Run the server:
+Run the server in development:
 
 ```bash
-go run ./cmd/e4 serve --listen :2222 --log-level debug
+go install github.com/air-verse/air@latest
+make dev
 ```
 
 Connect from another terminal:
@@ -30,6 +31,8 @@ ssh -p 2222 anything@localhost
 ```
 
 The SSH username is ignored. You choose a nickname after connecting.
+
+`make dev` watches Go sources and restarts the SSH server when they change. Restarting drops active SSH sessions and clears in-memory rooms, so reconnect after each rebuild.
 
 Install the binary with:
 
@@ -108,15 +111,25 @@ The code is structured so persistence, ratings, chat, bots, tournaments, and oth
 Requirements:
 
 - Go `1.25+`
+- `make`
 - an SSH client
+
+Install `air` to use hot reload:
+
+```bash
+go install github.com/air-verse/air@latest
+```
 
 Common commands:
 
 ```bash
-go test ./...
-go build ./...
-go run ./cmd/e4 serve --listen :2222 --log-level debug
+make test
+make build
+make run
+make dev
 ```
+
+`make run` starts the server once. `make dev` uses `air` to rebuild and restart automatically when Go files or `go.mod` change.
 
 ## Contributing
 

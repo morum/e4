@@ -29,20 +29,24 @@ This helps avoid duplicated work and makes it easier to align on:
 ### Requirements
 
 - Go `1.25+`
+- `make`
 - an SSH client
 
 ### Run locally
 
 ```bash
-go run ./cmd/e4 serve --listen :2222 --log-level debug
+go install github.com/air-verse/air@latest
+make dev
 ```
 
 ### Test and build
 
 ```bash
-go test ./...
-go build ./...
+make test
+make build
 ```
+
+Use `make run` for a one-shot local server without file watching. `make dev` auto-restarts the SSH server on source changes, which disconnects active SSH sessions and clears in-memory rooms.
 
 ## Project Expectations
 
@@ -88,8 +92,8 @@ Changes to the terminal UI should:
 
 1. create a branch for your change
 2. make the smallest correct implementation
-3. run `go test ./...`
-4. run `go build ./...`
+3. run `make test`
+4. run `make build`
 5. update docs if behavior or workflow changed
 6. open a pull request with a clear summary
 
