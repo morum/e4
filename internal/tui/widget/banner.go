@@ -1,24 +1,23 @@
 package widget
 
 import (
-	"strings"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/morum/e4/internal/tui/theme"
 )
 
 var bannerLines = []string{
-	`                 _  _   `,
-	`     ___    ___ | || |  `,
-	`    / -_)  |___|| || |  `,
-	`    \___|       |_||_|  `,
-	`                        `,
+	`     ___ `,
+	` ___| | |`,
+	`| -_|_  |`,
+	`|___| |_|`,
 }
 
 func Banner(t theme.Theme) string {
-	out := make([]string, 0, len(bannerLines)+2)
+	parts := make([]string, 0, len(bannerLines)+2)
 	for _, line := range bannerLines {
-		out = append(out, t.Title.Render(line))
+		parts = append(parts, t.Title.Render(line))
 	}
-	out = append(out, t.Muted.Render("        terminal chess over ssh"))
-	return strings.Join(out, "\n")
+	parts = append(parts, "", t.Muted.Render("terminal chess over ssh"))
+	return lipgloss.JoinVertical(lipgloss.Center, parts...)
 }
