@@ -124,7 +124,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
+			return m, func() tea.Msg { return LeaveRequestMsg{Reason: "session ended", Quit: true} }
 		case key.Matches(msg, m.keys.Leave):
 			return m, func() tea.Msg { return LeaveRequestMsg{Reason: "you left the room"} }
 		case key.Matches(msg, m.keys.Resign):
@@ -247,10 +247,23 @@ func (m Model) View(t theme.Theme) string {
 
 	header := m.renderHeader(t)
 	clocks := m.renderClocks(t)
-	board, moves := m.boardAndMoves(t)
 	footer := m.renderFooter(t)
 	help := m.renderHelp(t)
 
+	// Budget board height from the measured chrome rather than a fixed constant.
+	chromeH := lipgloss.Height(header) + 1 // header + blank
+	chromeH += lipgloss.Height(clocks) + 1 // clocks + blank
+	chromeH += lipgloss.Height(footer)
+	if help != "" {
+		chromeH += 1 + lipgloss.Height(help) // blank + help
+	}
+
+	boardH := m.height - chromeH - 1 // one blank between clocks and board
+	if boardH < 6 {
+		boardH = 6
+	}
+
+	board, moves := m.boardAndMoves(t, boardH)
 	body := board
 	if moves != "" {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, board, "  ", moves)
@@ -262,6 +275,12 @@ func (m Model) View(t theme.Theme) string {
 	}
 
 	full := lipgloss.JoinVertical(lipgloss.Left, parts...)
+
+	// Only vertically center when the content actually fits; otherwise
+	// lipgloss.Place clips both ends, hiding the header and footer.
+	if lipgloss.Height(full) >= m.height {
+		return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, full)
+	}
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, full)
 }
 
@@ -280,7 +299,7 @@ func (m Model) renderHeader(t theme.Theme) string {
 		t.Muted.Render(m.snapshot.TimeControl.String()),
 		t.Dim.Render("you: " + m.participant.Nickname + " (" + roleLabel(m.role) + ")"),
 	}
-	return strings.Join(pieces, "  ")
+	return widget.WrapPieces(pieces, "  ", m.width)
 }
 
 func (m Model) renderClocks(t theme.Theme) string {
@@ -305,16 +324,18 @@ func (m Model) renderClocks(t theme.Theme) string {
 	}
 
 	width := m.width - 4
-	if width < 32 {
-		width = 32
+	if width < 16 {
+		width = 16
+	}
+	if width > m.width {
+		width = m.width
 	}
 	return widget.ClockPair(t, top, bottom, width)
 }
 
-func (m Model) boardAndMoves(t theme.Theme) (string, string) {
-	footprintH := m.height - 12
-	if footprintH < 12 {
-		footprintH = 12
+func (m Model) boardAndMoves(t theme.Theme, boardH int) (string, string) {
+	if boardH < 6 {
+		boardH = 6
 	}
 
 	movesWidth := 24
@@ -323,7 +344,9 @@ func (m Model) boardAndMoves(t theme.Theme) (string, string) {
 	if includeMoves {
 		boardW -= movesWidth + 4
 	}
-	boardH := footprintH
+	if boardW < 16 {
+		boardW = 16
+	}
 
 	size := widget.PickBoardSize(boardW, boardH)
 	board := widget.Board(t, m.snapshot.Board, widget.BoardOptions{
@@ -367,7 +390,11 @@ func (m Model) statusLine(t theme.Theme) string {
 
 func (m Model) renderHelp(t theme.Theme) string {
 	if !m.helpOn {
-		return t.Dim.Render("enter: submit  esc: focus  ctrl+r: resign  ctrl+l: leave  f: flip  t: theme  ?: help  ctrl+c: quit")
+		tokens := []string{
+			"enter: submit", "esc: focus", "ctrl+r: resign", "ctrl+l: leave",
+			"f: flip", "t: theme", "?: help", "ctrl+c: quit",
+		}
+		return t.Dim.Render(widget.WrapPieces(tokens, "  ", m.width))
 	}
 	lines := []string{
 		t.Section.Render("Keybindings"),
@@ -385,6 +412,9 @@ func (m Model) renderHelp(t theme.Theme) string {
 		"  :leave / :quit    leave the room",
 		"  :flip             flip the board",
 		"  :theme <name>     switch to a named theme",
+	}
+	for i, line := range lines {
+		lines[i] = widget.TruncateLine(line, m.width)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -441,12 +471,3 @@ type flipBoardMsg struct{}
 
 // SetThemeMsg requests the parent app set a specific theme by name.
 type SetThemeMsg struct{ Name string }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-var _ = time.Second // keep time import alive

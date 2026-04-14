@@ -3,6 +3,8 @@ package tui
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"log/slog"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +17,20 @@ import (
 	"github.com/morum/e4/internal/tui/theme"
 )
 
+// nonPTYMessage is what we tell clients that attach without an interactive
+// terminal (exec, sftp, etc.). Kept as a package-level const so tests can
+// assert on it.
+const nonPTYMessage = "e4 requires an interactive terminal. Try: ssh -t -p 2222 <host>"
+
+// rejectNonPTY writes the no-tty message and exits the session. Split out
+// from Handler so it can be unit-tested without constructing a full Session.
+func rejectNonPTY(w io.Writer, exit func(int) error) {
+	fmt.Fprintln(w, nonPTYMessage)
+	if exit != nil {
+		_ = exit(1)
+	}
+}
+
 // Handler returns a bubbletea.Handler that serves the e4 TUI over SSH.
 // Each session gets a fresh app.Model wired to the shared lobby service
 // and theme registry.
@@ -22,6 +38,11 @@ func Handler(lobby *service.LobbyService, registry *theme.Registry, defaultTheme
 	return func(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 		pty, _, active := sess.Pty()
 		if !active {
+			// activeterm.Middleware should catch this before we get here, but
+			// guard against future middleware-ordering changes: tell the user
+			// explicitly that an interactive TTY is required rather than
+			// returning (nil, nil) and letting bubbletea fail silently.
+			rejectNonPTY(sess.Stderr(), sess.Exit)
 			return nil, nil
 		}
 

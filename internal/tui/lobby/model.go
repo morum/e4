@@ -231,11 +231,17 @@ func (m Model) renderFooter(t theme.Theme) string {
 		}
 	}
 
-	hint := "↑/↓ select  enter join  w watch  c create  r refresh  t theme  ? help  q quit"
+	var tokens []string
 	if m.mode == modeCreate {
-		hint = "enter submit  esc cancel"
+		tokens = []string{"enter submit", "esc cancel"}
+	} else {
+		tokens = []string{
+			"↑/↓ select", "enter join", "w watch", "c create",
+			"r refresh", "t theme", "? help", "q quit",
+		}
 	}
-	return strings.TrimRight(strings.Join([]string{status, t.Dim.Render(hint)}, "\n"), "\n")
+	hint := t.Dim.Render(widget.WrapPieces(tokens, "  ", m.width))
+	return strings.TrimRight(strings.Join([]string{status, hint}, "\n"), "\n")
 }
 
 func (m Model) summaryCounts() string {
@@ -262,9 +268,14 @@ func (m Model) selectedSummary() (domain.RoomSummary, bool) {
 }
 
 func (m Model) listSize() (int, int) {
+	// Never let the list exceed the viewport; on narrow terminals it's
+	// better to let the list clip its own items than to overflow the edge.
 	w := m.width - 4
-	if w < 40 {
-		w = 40
+	if w < 1 {
+		w = m.width
+	}
+	if w > m.width {
+		w = m.width
 	}
 	h := m.height - 14
 	if h < 6 {

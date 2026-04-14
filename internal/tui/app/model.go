@@ -50,6 +50,18 @@ func (m Model) Init() tea.Cmd {
 	return m.join.Init()
 }
 
+// ThemeName returns the name of the theme that will be used on the next
+// render. Exported so tests can verify theme cycling without rendering.
+func (m Model) ThemeName() string { return m.theme.Name }
+
+// Screen returns the current screen the model is displaying. Exposed for
+// tests; callers shouldn't need to branch on this at runtime.
+func (m Model) Screen() Screen { return m.screen }
+
+// InRoom reports whether the model currently owns a room handle. Tests
+// use this to assert leave/quit cleanup actually dropped the handle.
+func (m Model) InRoom() bool { return m.room != nil }
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 
@@ -80,6 +92,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.room.Cancel()
 			_ = m.lobbyService.LeaveRoom(roomID(m.room), m.participant.ID)
 			m.room = nil
+		}
+		if v.Quit {
+			return m, tea.Quit
 		}
 		m.screen = ScreenLobby
 		return m, tea.Batch(

@@ -22,8 +22,10 @@ type resignedMsg struct {
 }
 
 // LeaveRequestMsg signals the parent app that the user wants to return to the lobby.
+// If Quit is true, the session should terminate after cleanup.
 type LeaveRequestMsg struct {
 	Reason string
+	Quit   bool
 }
 
 // CycleThemeMsg signals the parent app to advance to the next theme.
