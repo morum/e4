@@ -391,7 +391,7 @@ func (m Model) statusLine(t theme.Theme) string {
 func (m Model) renderHelp(t theme.Theme) string {
 	if !m.helpOn {
 		tokens := []string{
-			"enter: submit", "esc: focus", "ctrl+r: resign", "ctrl+l: leave",
+			"enter: submit", "esc: focus", "ctrl+r: resign", "l: leave",
 			"f: flip", "t: theme", "?: help", "ctrl+c: quit",
 		}
 		return t.Dim.Render(widget.WrapPieces(tokens, "  ", m.width))
@@ -401,7 +401,7 @@ func (m Model) renderHelp(t theme.Theme) string {
 		"  enter      submit move or :command",
 		"  esc        toggle input focus",
 		"  ctrl+r     resign the game",
-		"  ctrl+l     leave room → return to lobby",
+		"  l          leave room → return to lobby",
 		"  f          flip board (hold focus off)",
 		"  t          cycle to next theme",
 		"  ?          toggle this help",
@@ -409,7 +409,7 @@ func (m Model) renderHelp(t theme.Theme) string {
 		"",
 		t.Section.Render("Slash commands (typed into the input)"),
 		"  :resign           resign the game",
-		"  :leave / :quit    leave the room",
+		"  :leave / :quit    leave the room (canonical)",
 		"  :flip             flip the board",
 		"  :theme <name>     switch to a named theme",
 	}

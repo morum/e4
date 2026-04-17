@@ -28,8 +28,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+r", "resign"),
 		),
 		Leave: key.NewBinding(
-			key.WithKeys("ctrl+l"),
-			key.WithHelp("ctrl+l", "leave"),
+			key.WithKeys("l"),
+			key.WithHelp("l", "leave"),
 		),
 		Flip: key.NewBinding(
 			key.WithKeys("f"),

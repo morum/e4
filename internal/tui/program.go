@@ -2,10 +2,13 @@ package tui
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
@@ -21,6 +24,9 @@ import (
 // terminal (exec, sftp, etc.). Kept as a package-level const so tests can
 // assert on it.
 const nonPTYMessage = "e4 requires an interactive terminal. Try: ssh -t -p 2222 <host>"
+
+var entropySource io.Reader = rand.Reader
+var fallbackIDSeq atomic.Uint64
 
 // rejectNonPTY writes the no-tty message and exits the session. Split out
 // from Handler so it can be unit-tested without constructing a full Session.
@@ -70,15 +76,26 @@ func Handler(lobby *service.LobbyService, registry *theme.Registry, defaultTheme
 		}
 
 		model := app.New(participant, lobby, registry, selected)
+		go func() {
+			<-sess.Context().Done()
+			model.CleanupSession()
+		}()
 		return model, []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
 	}
 }
 
 func randomID() string {
 	buf := make([]byte, 8)
-	if _, err := rand.Read(buf); err != nil {
-		return "00000000"
+	if _, err := io.ReadFull(entropySource, buf); err == nil {
+		return hex.EncodeToString(buf)
 	}
+	return fallbackID()
+}
+
+func fallbackID() string {
+	buf := make([]byte, 8)
+	seed := uint64(time.Now().UnixNano()) ^ fallbackIDSeq.Add(1)
+	binary.BigEndian.PutUint64(buf, seed)
 	return hex.EncodeToString(buf)
 }
 

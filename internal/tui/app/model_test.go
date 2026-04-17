@@ -118,6 +118,28 @@ func TestCtrlCQuitFromRoomTearsDownBeforeQuitting(t *testing.T) {
 	}
 }
 
+func TestCleanupSessionLeavesRoomOnDisconnect(t *testing.T) {
+	m, _, lobbySvc := newTestModel(t)
+	m = advancePastJoin(t, m, "tester")
+	m = enterRoom(t, m, lobbySvc)
+
+	if !m.InRoom() {
+		t.Fatal("expected app to be in a room")
+	}
+	if got := len(lobbySvc.ListGames()); got != 1 {
+		t.Fatalf("expected one room before disconnect cleanup, got %d", got)
+	}
+
+	m.CleanupSession()
+
+	if m.InRoom() {
+		t.Fatal("expected room session to be cleared after disconnect cleanup")
+	}
+	if got := len(lobbySvc.ListGames()); got != 0 {
+		t.Fatalf("expected disconnect cleanup to remove the room, got %d rooms", got)
+	}
+}
+
 func advancePastJoin(t *testing.T, m Model, nickname string) Model {
 	t.Helper()
 	// Send the nickname submission message that the join screen would emit.

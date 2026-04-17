@@ -96,3 +96,42 @@ func TestCtrlCInRoomRoutesThroughLeaveRequestWithQuit(t *testing.T) {
 		t.Fatal("expected Quit=true so the parent app can tea.Quit after cleanup")
 	}
 }
+
+func TestLeaveKeyRoutesThroughLeaveRequest(t *testing.T) {
+	sub := service.RoomSubscription{Updates: make(chan domain.GameSnapshot), Cancel: func() {}}
+	m := New(domain.Participant{ID: "p1", Nickname: "tester"}, domain.RoleWhite, stubRoom{id: "XYZ"}, sub)
+
+	m.input.Blur()
+	m.inputOn = false
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if cmd == nil {
+		t.Fatal("expected a command from leave key")
+	}
+	got := cmd()
+	req, ok := got.(LeaveRequestMsg)
+	if !ok {
+		t.Fatalf("expected LeaveRequestMsg, got %T (%v)", got, got)
+	}
+	if req.Quit {
+		t.Fatal("expected plain leave key to return to the lobby, not quit the session")
+	}
+}
+
+func TestSlashLeaveCommandRoutesThroughLeaveRequest(t *testing.T) {
+	sub := service.RoomSubscription{Updates: make(chan domain.GameSnapshot), Cancel: func() {}}
+	m := New(domain.Participant{ID: "p1", Nickname: "tester"}, domain.RoleWhite, stubRoom{id: "XYZ"}, sub)
+
+	cmd := m.handleSubmission(":leave")
+	if cmd == nil {
+		t.Fatal("expected a command from :leave")
+	}
+	got := cmd()
+	req, ok := got.(LeaveRequestMsg)
+	if !ok {
+		t.Fatalf("expected LeaveRequestMsg, got %T (%v)", got, got)
+	}
+	if req.Quit {
+		t.Fatal("expected :leave to return to the lobby, not quit the session")
+	}
+}

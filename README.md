@@ -13,7 +13,8 @@ You run the server, connect over SSH, pick a nickname, and play or watch games.
 - supports time controls like `10|0`, `3|2`, and `15|10`
 - accepts SAN moves like `e4`, `Nf3`, `O-O`, and `Qxe5+`
 - shows a live board, clocks, and move list in the terminal
-- supports tab completion for room IDs in `join` and `watch`
+- includes built-in themes (`classic`, `mono`, `nightowl`)
+- adapts the board and chrome to smaller SSH terminals
 
 ## Quick Start
 
@@ -43,41 +44,49 @@ Then run:
 e4 serve
 ```
 
-## Commands
+## Using The TUI
+
+After you connect, type a nickname and press `Enter`.
 
 ### Lobby
 
-```text
-list
-create 10|0
-join ABC123
-watch ABC123
-help
-quit
-```
+The lobby is key-driven:
 
-Tips:
-
-- press `Tab` after `join ` or `watch ` to autocomplete room IDs
-- press `Tab` again on the same partial input to list matching room IDs
+- `↑/↓` or `j/k`: move through rooms
+- `Enter`: join the selected room, or watch it if no seat is open
+- `w`: watch the selected room
+- `c`: create a room, then enter a time control like `10|0`
+- `r`: refresh the room list
+- `t`: cycle to the next theme
+- `?`: toggle help
+- `q` or `ctrl+c`: quit
 
 ### Room
 
-```text
-e4
-Nf3
-O-O
-board
-leave
-resign
-help
-quit
-```
+When the move input is focused, type SAN moves directly: `e4`, `Nf3`, `O-O`, `Qxe5+`.
+
+Room controls:
+
+- `Enter`: submit the current move or slash command
+- `Esc`: toggle input focus
+- `l`: leave the room and return to the lobby
+- `ctrl+r`: resign
+- `f`: flip the board
+- `t`: cycle to the next theme
+- `?`: toggle help
+- `ctrl+c`: quit the SSH session
+
+Slash commands typed into the input:
+
+- `:leave` or `:quit`: leave the room
+- `:resign`: resign the game
+- `:flip`: flip the board
+- `:theme <name>`: switch to a specific theme
 
 ## Configuration
 
 ```bash
-e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info]
+e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info] [--theme classic]
 ```
 
 Flags:
@@ -85,6 +94,7 @@ Flags:
 - `--listen`: SSH bind address
 - `--host-key`: path to the SSH private host key file
 - `--log-level`: `debug`, `info`, `warn`, or `error`
+- `--theme`: default TUI theme (`classic`, `mono`, or `nightowl`)
 
 By default, `e4` stores its generated host key in `.e4_host_key`.
 
@@ -97,7 +107,7 @@ internal/domain         core game and lobby types
 internal/service        room and lobby services
 internal/store/memory   in-memory repositories
 internal/clock          chess clock state
-internal/render         terminal rendering and theming
+internal/tui            Bubble Tea models, widgets, and themes
 internal/transport/ssh  SSH transport and session handling
 ```
 

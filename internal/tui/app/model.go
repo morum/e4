@@ -2,6 +2,7 @@ package app
 
 import (
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -26,6 +27,7 @@ type Model struct {
 	theme        theme.Theme
 	registry     *theme.Registry
 	lobbyService *service.LobbyService
+	session      *sessionState
 
 	width  int
 	height int
@@ -42,6 +44,7 @@ func New(participant domain.Participant, lobbySvc *service.LobbyService, registr
 		theme:        defaultTheme,
 		registry:     registry,
 		lobbyService: lobbySvc,
+		session:      newSessionState(),
 		join:         newJoinModel(participant.Nickname),
 	}
 }
@@ -60,7 +63,12 @@ func (m Model) Screen() Screen { return m.screen }
 
 // InRoom reports whether the model currently owns a room handle. Tests
 // use this to assert leave/quit cleanup actually dropped the handle.
-func (m Model) InRoom() bool { return m.room != nil }
+func (m Model) InRoom() bool {
+	if m.session == nil {
+		return false
+	}
+	return m.session.InRoom()
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
@@ -80,6 +88,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case lobby.EnterRoomMsg:
 		rm := room.New(m.participant, v.Role, v.Room, v.Sub)
+		if m.session != nil {
+			m.session.Enter(v.Room.ID(), v.Sub.Cancel)
+		}
 		m.room = &rm
 		m.screen = ScreenRoom
 		return m, tea.Batch(
@@ -88,11 +99,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case room.LeaveRequestMsg:
-		if m.room != nil {
-			m.room.Cancel()
-			_ = m.lobbyService.LeaveRoom(roomID(m.room), m.participant.ID)
-			m.room = nil
-		}
+		m.leaveCurrentRoom()
 		if v.Quit {
 			return m, tea.Quit
 		}
@@ -116,6 +123,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m.dispatch(msg)
+}
+
+// CleanupSession tears down any active room outside the normal in-model leave
+// flow. The SSH transport calls this on abrupt disconnects, where Wish quits
+// Bubble Tea directly and the app never receives LeaveRequestMsg.
+func (m *Model) CleanupSession() {
+	if m == nil {
+		return
+	}
+	m.leaveCurrentRoom()
 }
 
 func (m Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -157,6 +174,66 @@ func (m Model) View() string {
 	}
 }
 
-func roomID(r *room.Model) string {
-	return r.RoomID()
+func (m *Model) leaveCurrentRoom() {
+	if m == nil {
+		return
+	}
+	if m.session != nil {
+		_ = m.session.Leave(m.lobbyService, m.participant.ID)
+	}
+	m.room = nil
+}
+
+type sessionState struct {
+	mu   sync.Mutex
+	room *activeRoom
+}
+
+type activeRoom struct {
+	id     string
+	cancel func()
+}
+
+func newSessionState() *sessionState {
+	return &sessionState{}
+}
+
+func (s *sessionState) Enter(id string, cancel func()) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.room = &activeRoom{id: id, cancel: cancel}
+	s.mu.Unlock()
+}
+
+func (s *sessionState) Leave(lobbySvc *service.LobbyService, participantID string) error {
+	if s == nil {
+		return nil
+	}
+
+	s.mu.Lock()
+	active := s.room
+	s.room = nil
+	s.mu.Unlock()
+
+	if active == nil {
+		return nil
+	}
+	if active.cancel != nil {
+		active.cancel()
+	}
+	if lobbySvc == nil || active.id == "" {
+		return nil
+	}
+	return lobbySvc.LeaveRoom(active.id, participantID)
+}
+
+func (s *sessionState) InRoom() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.room != nil
 }

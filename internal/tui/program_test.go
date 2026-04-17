@@ -2,9 +2,16 @@ package tui
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
+
+type failingReader struct{}
+
+func (failingReader) Read(_ []byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
 
 func TestRejectNonPTYWritesHelpAndExitsNonZero(t *testing.T) {
 	var buf bytes.Buffer
@@ -40,6 +47,26 @@ func TestGuestNicknameUsesPrefix(t *testing.T) {
 	}
 	if got := guestNickname("ab"); got != "guest-ab" {
 		t.Fatalf("expected guest-ab for short IDs, got %q", got)
+	}
+}
+
+func TestRandomIDFallbackRemainsUnique(t *testing.T) {
+	prev := entropySource
+	entropySource = failingReader{}
+	fallbackIDSeq.Store(0)
+	defer func() {
+		entropySource = prev
+		fallbackIDSeq.Store(0)
+	}()
+
+	first := randomID()
+	second := randomID()
+
+	if len(first) != 16 || len(second) != 16 {
+		t.Fatalf("expected 16 hex chars from fallback IDs, got %q and %q", first, second)
+	}
+	if first == second {
+		t.Fatalf("expected fallback IDs to remain unique, got %q twice", first)
 	}
 }
 
