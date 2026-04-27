@@ -105,7 +105,7 @@ Flags:
 - `--database-url`: Postgres connection URL. Can also be set with `E4_DATABASE_URL`
 
 By default, `e4` stores its generated host key in `.e4_host_key`.
-Postgres is required for persistent player identities, games, and move history.
+Postgres 18+ is required for persistent player identities, games, and move history.
 
 ## Project Layout
 

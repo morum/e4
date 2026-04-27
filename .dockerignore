@@ -1,7 +1,7 @@
 .git
 .e4_host_key
 Dockerfile
-compose.yaml
+docker-compose.yml
 tmp
 dist
 build

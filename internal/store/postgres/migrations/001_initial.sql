@@ -1,12 +1,10 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS schema_migrations (
 	version text PRIMARY KEY,
 	applied_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS players (
-	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	id uuid PRIMARY KEY DEFAULT uuidv7(),
 	nickname text NOT NULL,
 	created_at timestamptz NOT NULL DEFAULT now(),
 	updated_at timestamptz NOT NULL DEFAULT now()
@@ -94,7 +92,7 @@ CREATE TABLE IF NOT EXISTS rating_events (
 );
 
 CREATE TABLE IF NOT EXISTS bots (
-	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	id uuid PRIMARY KEY DEFAULT uuidv7(),
 	player_id uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
 	name text NOT NULL,
 	config jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -103,7 +101,7 @@ CREATE TABLE IF NOT EXISTS bots (
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
-	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	id uuid PRIMARY KEY DEFAULT uuidv7(),
 	name text NOT NULL,
 	status text NOT NULL DEFAULT 'draft',
 	config jsonb NOT NULL DEFAULT '{}'::jsonb,
