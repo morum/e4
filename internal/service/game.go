@@ -143,15 +143,26 @@ func (r *Room) ID() string {
 }
 
 func (r *Room) Snapshot() domain.GameSnapshot {
-	reply := make(chan domain.GameSnapshot)
-	r.commands <- snapshotReq{reply: reply}
-	return <-reply
+	return request(r, func(reply chan domain.GameSnapshot) any {
+		return snapshotReq{reply: reply}
+	}, domain.GameSnapshot{RoomID: r.id, Status: domain.RoomStatusFinished})
 }
 
 func (r *Room) Subscribe() RoomSubscription {
-	reply := make(chan subscribeRes)
-	r.commands <- subscribeReq{reply: reply}
-	res := <-reply
+	reply := make(chan subscribeRes, 1)
+	select {
+	case r.commands <- subscribeReq{reply: reply}:
+	case <-r.done:
+		return closedSubscription()
+	}
+
+	var res subscribeRes
+	select {
+	case res = <-reply:
+	case <-r.done:
+		return closedSubscription()
+	}
+
 	return RoomSubscription{
 		Updates: res.updates,
 		Cancel: func() {
@@ -164,34 +175,59 @@ func (r *Room) Subscribe() RoomSubscription {
 }
 
 func (r *Room) JoinPlayer(participant domain.Participant) (domain.Role, error) {
-	reply := make(chan joinRes)
-	r.commands <- joinReq{participant: participant, reply: reply}
-	res := <-reply
+	res := request(r, func(reply chan joinRes) any {
+		return joinReq{participant: participant, reply: reply}
+	}, joinRes{role: domain.RoleNone, err: ErrRoomClosed})
 	return res.role, res.err
 }
 
 func (r *Room) AddWatcher(participant domain.Participant) error {
-	reply := make(chan error)
-	r.commands <- watchReq{participant: participant, reply: reply}
-	return <-reply
+	return request(r, func(reply chan error) any {
+		return watchReq{participant: participant, reply: reply}
+	}, ErrRoomClosed)
 }
 
 func (r *Room) Leave(participantID string) bool {
-	reply := make(chan bool)
-	r.commands <- leaveReq{participantID: participantID, reply: reply}
-	return <-reply
+	return request(r, func(reply chan bool) any {
+		return leaveReq{participantID: participantID, reply: reply}
+	}, true)
 }
 
 func (r *Room) SubmitMove(participantID, move string) error {
-	reply := make(chan error)
-	r.commands <- moveReq{participantID: participantID, move: move, reply: reply}
-	return <-reply
+	return request(r, func(reply chan error) any {
+		return moveReq{participantID: participantID, move: move, reply: reply}
+	}, ErrRoomClosed)
 }
 
 func (r *Room) Resign(participantID string) error {
-	reply := make(chan error)
-	r.commands <- resignReq{participantID: participantID, reply: reply}
-	return <-reply
+	return request(r, func(reply chan error) any {
+		return resignReq{participantID: participantID, reply: reply}
+	}, ErrRoomClosed)
+}
+
+func request[T any](r *Room, build func(chan T) any, closed T) T {
+	reply := make(chan T, 1)
+	select {
+	case r.commands <- build(reply):
+	case <-r.done:
+		return closed
+	}
+
+	select {
+	case res := <-reply:
+		return res
+	case <-r.done:
+		return closed
+	}
+}
+
+func closedSubscription() RoomSubscription {
+	updates := make(chan domain.GameSnapshot)
+	close(updates)
+	return RoomSubscription{
+		Updates: updates,
+		Cancel:  func() {},
+	}
 }
 
 func (r *Room) loop(state roomState) {
@@ -506,7 +542,10 @@ func (s *roomState) broadcast(roomID string) {
 			case <-sub:
 			default:
 			}
-			sub <- snapshot
+			select {
+			case sub <- snapshot:
+			default:
+			}
 		}
 	}
 }

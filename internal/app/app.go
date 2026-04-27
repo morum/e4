@@ -9,6 +9,7 @@ import (
 	"github.com/morum/e4/internal/service"
 	"github.com/morum/e4/internal/store/memory"
 	sshtransport "github.com/morum/e4/internal/transport/ssh"
+	"github.com/morum/e4/internal/tui/theme"
 )
 
 type App struct {
@@ -25,10 +26,18 @@ func New(cfg Config) (*App, error) {
 	repo := memory.NewRoomRepository()
 	lobby := service.NewLobbyService(repo, logger)
 
+	themes := theme.Builtin()
+	defaultTheme, ok := themes.Get(cfg.Theme)
+	if !ok {
+		return nil, fmt.Errorf("unknown theme %q (available: %v)", cfg.Theme, themes.Names())
+	}
+
 	server, err := sshtransport.NewServer(sshtransport.Config{
-		ListenAddr:  cfg.ListenAddr,
-		HostKeyPath: cfg.HostKeyPath,
-		Logger:      logger,
+		ListenAddr:   cfg.ListenAddr,
+		HostKeyPath:  cfg.HostKeyPath,
+		Logger:       logger,
+		Themes:       themes,
+		DefaultTheme: defaultTheme,
 	}, lobby)
 	if err != nil {
 		return nil, err

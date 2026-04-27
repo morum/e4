@@ -4,7 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/morum/e4/internal/clock"
 	"github.com/morum/e4/internal/domain"
+
+	"github.com/notnil/chess"
 )
 
 func TestRoomLifecycleAndSANMoves(t *testing.T) {
@@ -147,5 +150,97 @@ func TestActiveRoomBroadcastsClockTicks(t *testing.T) {
 		}
 	case <-time.After(1500 * time.Millisecond):
 		t.Fatal("expected active room to broadcast a clock tick")
+	}
+}
+
+func TestClosedRoomMethodsReturnWithoutDeadlock(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("TEST04", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer returned error: %v", err)
+	}
+	if !room.Leave(white.ID) {
+		t.Fatal("expected room to be empty after last participant leaves")
+	}
+	<-room.done
+
+	assertReturns(t, "Snapshot", func() {
+		snap := room.Snapshot()
+		if snap.RoomID != "TEST04" || snap.Status != domain.RoomStatusFinished {
+			t.Fatalf("unexpected closed snapshot: %#v", snap)
+		}
+	})
+	assertReturns(t, "Subscribe", func() {
+		sub := room.Subscribe()
+		if _, ok := <-sub.Updates; ok {
+			t.Fatal("expected closed subscription channel")
+		}
+		sub.Cancel()
+	})
+	assertReturns(t, "JoinPlayer", func() {
+		if _, err := room.JoinPlayer(domain.Participant{ID: "p2", Nickname: "bob"}); err != ErrRoomClosed {
+			t.Fatalf("expected ErrRoomClosed, got %v", err)
+		}
+	})
+	assertReturns(t, "AddWatcher", func() {
+		if err := room.AddWatcher(domain.Participant{ID: "w1", Nickname: "watcher"}); err != ErrRoomClosed {
+			t.Fatalf("expected ErrRoomClosed, got %v", err)
+		}
+	})
+	assertReturns(t, "Leave", func() {
+		if !room.Leave("p2") {
+			t.Fatal("expected Leave on a closed room to report empty")
+		}
+	})
+	assertReturns(t, "SubmitMove", func() {
+		if err := room.SubmitMove("p1", "e4"); err != ErrRoomClosed {
+			t.Fatalf("expected ErrRoomClosed, got %v", err)
+		}
+	})
+	assertReturns(t, "Resign", func() {
+		if err := room.Resign("p1"); err != ErrRoomClosed {
+			t.Fatalf("expected ErrRoomClosed, got %v", err)
+		}
+	})
+}
+
+func TestBroadcastDropsWhenSubscriberCannotReceive(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+	state := roomState{
+		timeControl: tc,
+		status:      domain.RoomStatusWaiting,
+		game:        chess.NewGame(),
+		clock:       clock.New(tc),
+		watchers:    make(map[string]domain.Participant),
+		subs: map[int]chan domain.GameSnapshot{
+			1: make(chan domain.GameSnapshot),
+		},
+	}
+
+	assertReturns(t, "broadcast", func() {
+		state.broadcast("TEST05")
+	})
+}
+
+func assertReturns(t *testing.T, name string, fn func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatalf("%s did not return", name)
 	}
 }
