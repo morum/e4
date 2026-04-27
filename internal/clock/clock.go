@@ -17,11 +17,43 @@ type State struct {
 	lastUpdate     time.Time
 }
 
+type Snapshot struct {
+	WhiteRemaining time.Duration
+	BlackRemaining time.Duration
+	Increment      time.Duration
+	Running        bool
+	ActiveColor    chess.Color
+	LastUpdate     time.Time
+}
+
 func New(tc domain.TimeControl) State {
 	return State{
 		whiteRemaining: tc.Base,
 		blackRemaining: tc.Base,
 		increment:      tc.Increment,
+	}
+}
+
+func Restore(snapshot Snapshot) State {
+	return State{
+		whiteRemaining: snapshot.WhiteRemaining,
+		blackRemaining: snapshot.BlackRemaining,
+		increment:      snapshot.Increment,
+		running:        snapshot.Running,
+		activeColor:    snapshot.ActiveColor,
+		lastUpdate:     snapshot.LastUpdate,
+	}
+}
+
+func (s *State) Export(now time.Time) Snapshot {
+	white, black := s.Snapshot(now)
+	return Snapshot{
+		WhiteRemaining: white,
+		BlackRemaining: black,
+		Increment:      s.increment,
+		Running:        s.running,
+		ActiveColor:    s.activeColor,
+		LastUpdate:     now,
 	}
 }
 

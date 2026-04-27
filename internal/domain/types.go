@@ -20,8 +20,13 @@ const (
 )
 
 type Participant struct {
-	ID       string
-	Nickname string
+	ID               string
+	PlayerID         string
+	SessionID        string
+	KeyFingerprint   string
+	SSHAuthorizedKey string
+	SSHKeyType       string
+	Nickname         string
 }
 
 type RoomSummary struct {
@@ -59,6 +64,7 @@ type GameSnapshot struct {
 	BlackName     string
 	WatcherCount  int
 	Turn          string
+	FEN           string
 	Board         BoardState
 	Moves         []string
 	WhiteTimeLeft time.Duration

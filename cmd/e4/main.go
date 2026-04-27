@@ -43,6 +43,7 @@ func runServe(args []string) error {
 	fs.StringVar(&cfg.HostKeyPath, "host-key", cfg.HostKeyPath, "path to the SSH host private key")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")
 	fs.StringVar(&cfg.Theme, "theme", cfg.Theme, "default TUI theme: classic, mono, nightowl")
+	fs.StringVar(&cfg.DatabaseURL, "database-url", cfg.DatabaseURL, "Postgres connection URL")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -62,5 +63,5 @@ func printUsage() {
 	fmt.Println("e4")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info] [--theme classic]")
+	fmt.Println("  e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info] [--theme classic] [--database-url postgres://...]")
 }
