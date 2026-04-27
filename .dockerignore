@@ -1,0 +1,7 @@
+.git
+.e4_host_key
+Dockerfile
+compose.yaml
+tmp
+dist
+build

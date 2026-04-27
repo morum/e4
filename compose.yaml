@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: e4
+      POSTGRES_USER: e4
+      POSTGRES_PASSWORD: e4
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e4 -d e4"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  e4:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      E4_DATABASE_URL: postgres://e4:e4@postgres:5432/e4?sslmode=disable
+    command: ["serve", "--listen", ":2222", "--host-key", "/data/e4_host_key"]
+    ports:
+      - "2222:2222"
+    volumes:
+      - e4-data:/data
+
+volumes:
+  postgres-data:
+  e4-data:

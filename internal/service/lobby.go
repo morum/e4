@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log/slog"
@@ -18,12 +19,60 @@ type RoomRepository interface {
 }
 
 type LobbyService struct {
-	repo   RoomRepository
-	logger *slog.Logger
+	repo        RoomRepository
+	persistence GamePersistence
+	players     PlayerStore
+	logger      *slog.Logger
 }
 
 func NewLobbyService(repo RoomRepository, logger *slog.Logger) *LobbyService {
-	return &LobbyService{repo: repo, logger: logger}
+	return NewPersistentLobbyService(repo, noopPersistence{}, logger)
+}
+
+func NewPersistentLobbyService(repo RoomRepository, persistence GamePersistence, logger *slog.Logger) *LobbyService {
+	if persistence == nil {
+		persistence = noopPersistence{}
+	}
+	players, _ := persistence.(PlayerStore)
+	return &LobbyService{repo: repo, persistence: persistence, players: players, logger: logger}
+}
+
+func (s *LobbyService) IdentifyParticipant(ctx context.Context, participant domain.Participant, nickname string) (domain.Participant, error) {
+	participant.Nickname = strings.TrimSpace(nickname)
+	if participant.PlayerID != "" || participant.KeyFingerprint == "" || s.players == nil {
+		if participant.ID == "" {
+			participant.ID = participant.PlayerID
+		}
+		return participant, nil
+	}
+	identified, err := s.players.FindOrCreateBySSHKey(ctx, SSHKeyIdentity{
+		Fingerprint:   participant.KeyFingerprint,
+		AuthorizedKey: participant.SSHAuthorizedKey,
+		KeyType:       participant.SSHKeyType,
+	}, participant.Nickname)
+	if err != nil {
+		return domain.Participant{}, err
+	}
+	identified.SessionID = participant.SessionID
+	return identified, nil
+}
+
+func (s *LobbyService) RestoreOpenGames(ctx context.Context) error {
+	rooms, err := s.persistence.LoadOpenRooms(ctx)
+	if err != nil {
+		return err
+	}
+	for _, record := range rooms {
+		room, err := RestoreRoom(record, s.persistence, s.logger)
+		if err != nil {
+			return err
+		}
+		if err := s.repo.Save(room); err != nil {
+			return err
+		}
+		s.logInfo("room restored", "room_id", record.ID, "status", record.Status)
+	}
+	return nil
 }
 
 func (s *LobbyService) CreateGame(host domain.Participant, tc domain.TimeControl) (GameRoom, domain.Role, error) {
@@ -37,7 +86,7 @@ func (s *LobbyService) CreateGame(host domain.Participant, tc domain.TimeControl
 			continue
 		}
 
-		room := NewRoom(id, tc, s.logger)
+		room := NewPersistentRoom(id, tc, s.persistence, s.logger)
 		if err := s.repo.Save(room); err != nil {
 			return nil, domain.RoleNone, err
 		}

@@ -153,6 +153,51 @@ func TestActiveRoomBroadcastsClockTicks(t *testing.T) {
 	}
 }
 
+func TestRestoreActiveRoomPausesUntilBothPlayersReconnect(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	white := domain.Participant{ID: "11111111-1111-1111-1111-111111111111", Nickname: "alice"}
+	black := domain.Participant{ID: "22222222-2222-2222-2222-222222222222", Nickname: "bob"}
+	room, err := RestoreRoom(PersistedRoom{
+		ID:          "REST01",
+		Status:      domain.RoomStatusActive,
+		TimeControl: tc,
+		White:       &white,
+		Black:       &black,
+		Moves:       []string{"e4", "e5"},
+		Clock: clock.Snapshot{
+			WhiteRemaining: 3 * time.Second,
+			BlackRemaining: 3 * time.Second,
+			Increment:      tc.Increment,
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("RestoreRoom returned error: %v", err)
+	}
+
+	before := room.Snapshot()
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	afterOne := room.Snapshot()
+	if afterOne.WhiteTimeLeft != before.WhiteTimeLeft {
+		t.Fatalf("expected restored game to remain paused until both players reconnect, got %v then %v", before.WhiteTimeLeft, afterOne.WhiteTimeLeft)
+	}
+
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	afterBoth := room.Snapshot()
+	if afterBoth.WhiteTimeLeft >= afterOne.WhiteTimeLeft {
+		t.Fatalf("expected side-to-move clock to run after both reconnect, got %v then %v", afterOne.WhiteTimeLeft, afterBoth.WhiteTimeLeft)
+	}
+}
+
 func TestClosedRoomMethodsReturnWithoutDeadlock(t *testing.T) {
 	tc, err := domain.ParseTimeControl("3|0")
 	if err != nil {

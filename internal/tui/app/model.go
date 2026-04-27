@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"sync"
 
@@ -78,7 +79,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = v.Height
 
 	case nicknameSubmittedMsg:
-		m.participant.Nickname = v.Nickname
+		participant, err := m.lobbyService.IdentifyParticipant(context.Background(), m.participant, v.Nickname)
+		if err != nil {
+			m.join.error = err.Error()
+			return m, nil
+		}
+		m.participant = participant
 		m.lobby = lobby.New(m.participant, m.lobbyService)
 		m.screen = ScreenLobby
 		return m, tea.Batch(
