@@ -247,12 +247,16 @@ func (m Model) renderFooter(t theme.Theme) string {
 func (m Model) summaryCounts() string {
 	open, active, finished := 0, 0, 0
 	for _, r := range m.rooms {
-		switch {
-		case r.Status == domain.RoomStatusActive:
+		switch r.Status {
+		case domain.RoomStatusActive:
 			active++
-		case r.Status == domain.RoomStatusWaiting && r.HasOpenSeat:
-			open++
-		default:
+		case domain.RoomStatusWaiting:
+			if r.HasOpenSeat {
+				open++
+			} else {
+				active++
+			}
+		case domain.RoomStatusFinished:
 			finished++
 		}
 	}

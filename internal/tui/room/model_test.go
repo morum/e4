@@ -118,6 +118,26 @@ func TestLeaveKeyRoutesThroughLeaveRequest(t *testing.T) {
 	}
 }
 
+func TestLeaveKeyIsIgnoredWhileInputFocused(t *testing.T) {
+	sub := service.RoomSubscription{Updates: make(chan domain.GameSnapshot), Cancel: func() {}}
+	m := New(domain.Participant{ID: "p1", Nickname: "tester"}, domain.RoleWhite, stubRoom{id: "XYZ"}, sub)
+
+	if !m.inputOn {
+		t.Fatal("expected player input to start focused")
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = updated
+	if cmd != nil {
+		if _, ok := cmd().(LeaveRequestMsg); ok {
+			t.Fatal("pressing 'l' with input focused must not fire LeaveRequestMsg")
+		}
+	}
+	if got := m.input.Value(); got != "l" {
+		t.Fatalf("expected focused input to receive the typed rune, got %q", got)
+	}
+}
+
 func TestSlashLeaveCommandRoutesThroughLeaveRequest(t *testing.T) {
 	sub := service.RoomSubscription{Updates: make(chan domain.GameSnapshot), Cancel: func() {}}
 	m := New(domain.Participant{ID: "p1", Nickname: "tester"}, domain.RoleWhite, stubRoom{id: "XYZ"}, sub)

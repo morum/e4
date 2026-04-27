@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -59,7 +60,7 @@ func Handler(lobby *service.LobbyService, registry *theme.Registry, defaultTheme
 		}
 
 		selected := defaultTheme
-		if !isANSICapable(pty.Term) {
+		if !supportsColorTheme(pty.Term) {
 			if m, ok := registry.Get("mono"); ok {
 				selected = m
 			}
@@ -106,9 +107,17 @@ func guestNickname(id string) string {
 	return "guest-" + id[:4]
 }
 
-func isANSICapable(term string) bool {
+func supportsColorTheme(term string) bool {
+	term = strings.ToLower(strings.TrimSpace(term))
 	if term == "" || term == "dumb" {
 		return false
 	}
-	return true
+	return strings.Contains(term, "256color") ||
+		strings.Contains(term, "truecolor") ||
+		strings.Contains(term, "24bit") ||
+		strings.Contains(term, "direct") ||
+		strings.HasPrefix(term, "xterm-kitty") ||
+		strings.HasPrefix(term, "alacritty") ||
+		strings.HasPrefix(term, "foot") ||
+		term == "wezterm"
 }

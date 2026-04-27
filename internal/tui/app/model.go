@@ -143,7 +143,7 @@ func (m Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScreenLobby:
 		m.lobby, cmd = m.lobby.Update(msg)
 	case ScreenRoom:
-		if m.room != nil {
+		if m.session.InRoom() && m.room != nil {
 			updated, c := m.room.Update(msg)
 			*m.room = updated
 			cmd = c
@@ -165,7 +165,7 @@ func (m Model) View() string {
 	case ScreenLobby:
 		return m.lobby.View(m.theme)
 	case ScreenRoom:
-		if m.room == nil {
+		if !m.session.InRoom() || m.room == nil {
 			return m.theme.Dim.Render("loading…")
 		}
 		return m.room.View(m.theme)
@@ -181,7 +181,6 @@ func (m *Model) leaveCurrentRoom() {
 	if m.session != nil {
 		_ = m.session.Leave(m.lobbyService, m.participant.ID)
 	}
-	m.room = nil
 }
 
 type sessionState struct {

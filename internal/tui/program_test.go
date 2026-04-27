@@ -70,16 +70,28 @@ func TestRandomIDFallbackRemainsUnique(t *testing.T) {
 	}
 }
 
-func TestIsANSICapableHandlesDumbTerminals(t *testing.T) {
+func TestSupportsColorThemeRequiresColorCapableTerminals(t *testing.T) {
 	cases := map[string]bool{
-		"":       false,
-		"dumb":   false,
-		"xterm":  true,
-		"screen": true,
+		"":                  false,
+		"dumb":              false,
+		"vt100":             false,
+		"linux":             false,
+		"ansi":              false,
+		"xterm":             false,
+		"screen":            false,
+		"xterm-256color":    true,
+		"screen-256color":   true,
+		"tmux-24bit":        true,
+		"xterm-direct":      true,
+		"xterm-kitty":       true,
+		"alacritty":         true,
+		"foot":              true,
+		"wezterm":           true,
+		"wezterm-truecolor": true,
 	}
 	for term, want := range cases {
-		if got := isANSICapable(term); got != want {
-			t.Errorf("isANSICapable(%q) = %v, want %v", term, got, want)
+		if got := supportsColorTheme(term); got != want {
+			t.Errorf("supportsColorTheme(%q) = %v, want %v", term, got, want)
 		}
 	}
 }

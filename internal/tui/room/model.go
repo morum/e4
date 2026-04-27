@@ -125,7 +125,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, func() tea.Msg { return LeaveRequestMsg{Reason: "session ended", Quit: true} }
-		case key.Matches(msg, m.keys.Leave):
+		case !m.inputOn && key.Matches(msg, m.keys.Leave):
 			return m, func() tea.Msg { return LeaveRequestMsg{Reason: "you left the room"} }
 		case key.Matches(msg, m.keys.Resign):
 			if m.role == domain.RoleWhite || m.role == domain.RoleBlack {
