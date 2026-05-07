@@ -22,6 +22,7 @@ var (
 	ErrNotYourSeat       = errors.New("you are not seated in this game")
 	ErrNotYourTurn       = errors.New("it is not your turn")
 	ErrWatcherCannotMove = errors.New("watchers cannot make moves")
+	ErrGamePaused        = errors.New("game is paused until both players are connected")
 )
 
 type GameRoom interface {
@@ -501,6 +502,9 @@ func (s *roomState) submitMove(participantID, move string) error {
 	if s.status != domain.RoomStatusActive {
 		return ErrGameNotActive
 	}
+	if s.white == nil || s.black == nil || !s.connected[s.white.ID] || !s.connected[s.black.ID] {
+		return ErrGamePaused
+	}
 
 	color, nickname, _, err := s.playerByID(participantID)
 	if err != nil {
@@ -574,6 +578,9 @@ func (s *roomState) resumeIfReady() {
 		return
 	}
 	if !s.connected[s.white.ID] || !s.connected[s.black.ID] {
+		return
+	}
+	if s.clock.Running() {
 		return
 	}
 	s.clock.Start(s.game.Position().Turn(), time.Now())

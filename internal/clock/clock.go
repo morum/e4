@@ -57,6 +57,10 @@ func (s *State) Export(now time.Time) Snapshot {
 	}
 }
 
+func (s *State) Running() bool {
+	return s.running
+}
+
 func (s *State) Start(turn chess.Color, now time.Time) {
 	s.running = true
 	s.activeColor = turn

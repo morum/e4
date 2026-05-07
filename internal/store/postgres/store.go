@@ -135,13 +135,30 @@ func (s *Store) FindOrCreateBySSHKey(ctx context.Context, key service.SSHKeyIden
 	if err := tx.QueryRowContext(ctx, `INSERT INTO players(nickname) VALUES ($1) RETURNING id`, nickname).Scan(&playerID); err != nil {
 		return domain.Participant{}, err
 	}
-	_, err = tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO player_keys(fingerprint, player_id, authorized_key, key_type)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (fingerprint) DO NOTHING
 	`, key.Fingerprint, playerID, key.AuthorizedKey, key.KeyType)
 	if err != nil {
 		return domain.Participant{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return domain.Participant{}, err
+	}
+	if n == 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM players WHERE id = $1::uuid`, playerID); err != nil {
+			return domain.Participant{}, err
+		}
+		participant, found, err = findParticipantByKey(ctx, tx, key)
+		if err != nil {
+			return domain.Participant{}, err
+		}
+		if !found {
+			return domain.Participant{}, errors.New("failed to persist SSH key identity")
+		}
+		return participant, tx.Commit()
 	}
 	participant, found, err = findParticipantByKey(ctx, tx, key)
 	if err != nil {

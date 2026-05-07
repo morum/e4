@@ -153,6 +153,62 @@ func TestActiveRoomBroadcastsClockTicks(t *testing.T) {
 	}
 }
 
+func TestSubmitMoveRejectedWhileOpponentDisconnected(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("PAUSE01", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	room.Leave(white.ID)
+
+	if err := room.SubmitMove(white.ID, "e4"); err != ErrGamePaused {
+		t.Fatalf("expected ErrGamePaused while disconnected, got %v", err)
+	}
+	if err := room.SubmitMove(black.ID, "e5"); err != ErrGamePaused {
+		t.Fatalf("expected ErrGamePaused while opponent disconnected, got %v", err)
+	}
+}
+
+func TestReconnectSamePlayerDoesNotResetRunningClock(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("CLK01", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	time.Sleep(800 * time.Millisecond)
+	before := room.Snapshot()
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) reconnect returned error: %v", err)
+	}
+	after := room.Snapshot()
+
+	if after.WhiteTimeLeft > before.WhiteTimeLeft+50*time.Millisecond {
+		t.Fatalf("reconnect must not grant extra time: before=%v after=%v", before.WhiteTimeLeft, after.WhiteTimeLeft)
+	}
+}
+
 func TestRestoreActiveRoomPausesUntilBothPlayersReconnect(t *testing.T) {
 	tc, err := domain.ParseTimeControl("3|0")
 	if err != nil {
