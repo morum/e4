@@ -119,6 +119,21 @@ type resignReq struct {
 	reply         chan error
 }
 
+type pendingMove struct {
+	game         *chess.Game
+	clock        clock.State
+	moves        []string
+	lastMoveFrom string
+	lastMoveTo   string
+	status       domain.RoomStatus
+	outcome      string
+	method       string
+	lastEvent    string
+	moveText     string
+	playedAt     time.Time
+	playerID     string
+}
+
 func NewRoom(id string, tc domain.TimeControl, logger *slog.Logger) *Room {
 	return newRoom(id, roomState{
 		logger:      logger,
@@ -367,13 +382,7 @@ func (r *Room) loop(state roomState) {
 				}
 				state.broadcast(r.id)
 			case moveReq:
-				err := state.submitMove(req.participantID, req.move)
-				if err == nil {
-					err = state.persistLatestMove(r.id, req.participantID)
-				}
-				if err == nil {
-					err = state.persistRoom(r.id)
-				}
+				err := state.submitMove(r.id, req.participantID, req.move)
 				req.reply <- err
 				if err == nil {
 					state.broadcast(r.id)
@@ -474,17 +483,16 @@ func (s *roomState) leave(participantID string) bool {
 	return s.participantCount() == 0
 }
 
-func (s *roomState) leaveSeat(seat **domain.Participant, participantID string, _ chess.Color, role domain.Role) {
+func (s *roomState) leaveSeat(seat **domain.Participant, participantID string, color chess.Color, role domain.Role) {
 	participant := *seat
 	if participant == nil || participant.ID != participantID {
 		return
 	}
 
 	if s.status == domain.RoomStatusActive {
-		s.connected[participantID] = false
-		s.clock.Stop(time.Now())
-		s.lastEvent = fmt.Sprintf("%s disconnected. Game paused.", participant.Nickname)
-		s.log("player disconnected active game", "session_id", participantID, "role", role)
+		s.finishByResignation(color)
+		s.lastEvent = fmt.Sprintf("%s left and resigned.", participant.Nickname)
+		s.log("player left active game", "session_id", participantID, "role", role)
 	} else {
 		s.lastEvent = fmt.Sprintf("%s left the room.", participant.Nickname)
 		s.log("player left waiting room", "session_id", participantID, "role", role)
@@ -498,55 +506,113 @@ func (s *roomState) leaveSeat(seat **domain.Participant, participantID string, _
 	}
 }
 
-func (s *roomState) submitMove(participantID, move string) error {
+func (s *roomState) submitMove(roomID, participantID, move string) error {
+	pending, err := s.prepareMove(participantID, move)
+	if err != nil {
+		return err
+	}
+	if err := s.persistMove(roomID, pending); err != nil {
+		return err
+	}
+	s.applyMove(pending)
+	return nil
+}
+
+func (s *roomState) prepareMove(participantID, move string) (pendingMove, error) {
 	if s.status != domain.RoomStatusActive {
-		return ErrGameNotActive
+		return pendingMove{}, ErrGameNotActive
 	}
 	if s.white == nil || s.black == nil || !s.connected[s.white.ID] || !s.connected[s.black.ID] {
-		return ErrGamePaused
+		return pendingMove{}, ErrGamePaused
 	}
 
 	color, nickname, _, err := s.playerByID(participantID)
 	if err != nil {
 		if _, ok := s.watchers[participantID]; ok {
-			return ErrWatcherCannotMove
+			return pendingMove{}, ErrWatcherCannotMove
 		}
-		return err
+		return pendingMove{}, err
 	}
 
 	turn := s.game.Position().Turn()
 	if color != turn {
-		return ErrNotYourTurn
+		return pendingMove{}, ErrNotYourTurn
 	}
 
 	cleanMove := strings.TrimSpace(move)
-	parsedMove, err := s.notation.Decode(s.game.Position(), cleanMove)
+	nextGame, err := s.replayGame()
 	if err != nil {
-		return fmt.Errorf("invalid move %q", cleanMove)
+		return pendingMove{}, err
+	}
+	parsedMove, err := s.notation.Decode(nextGame.Position(), cleanMove)
+	if err != nil {
+		return pendingMove{}, fmt.Errorf("invalid move %q", cleanMove)
 	}
 
-	moveText := s.notation.Encode(s.game.Position(), parsedMove)
-	if err := s.game.Move(parsedMove); err != nil {
-		return err
+	moveText := s.notation.Encode(nextGame.Position(), parsedMove)
+	if err := nextGame.Move(parsedMove); err != nil {
+		return pendingMove{}, err
 	}
 
-	s.moves = append(s.moves, moveText)
-	s.lastMoveFrom = parsedMove.S1().String()
-	s.lastMoveTo = parsedMove.S2().String()
-	s.clock.Switch(turn, time.Now())
-	s.lastEvent = fmt.Sprintf("%s played %s.", nickname, moveText)
-	s.log("move submitted", "session_id", participantID, "nickname", nickname, "move", moveText, "turn_next", s.game.Position().Turn().String())
+	now := time.Now()
+	nextClock := clock.Restore(s.clock.Export(now))
+	nextClock.Switch(turn, now)
+	nextMoves := append(append([]string(nil), s.moves...), moveText)
+	pending := pendingMove{
+		game:         nextGame,
+		clock:        nextClock,
+		moves:        nextMoves,
+		lastMoveFrom: parsedMove.S1().String(),
+		lastMoveTo:   parsedMove.S2().String(),
+		status:       s.status,
+		outcome:      s.outcome,
+		method:       s.method,
+		lastEvent:    fmt.Sprintf("%s played %s.", nickname, moveText),
+		moveText:     moveText,
+		playedAt:     now,
+		playerID:     participantID,
+	}
 
-	if s.game.Outcome() != chess.NoOutcome {
-		s.status = domain.RoomStatusFinished
-		s.outcome = s.game.Outcome().String()
-		s.method = s.game.Method().String()
-		s.clock.Stop(time.Now())
-		s.lastEvent = fmt.Sprintf("%s finished the game with %s.", nickname, moveText)
+	if nextGame.Outcome() != chess.NoOutcome {
+		pending.status = domain.RoomStatusFinished
+		pending.outcome = nextGame.Outcome().String()
+		pending.method = nextGame.Method().String()
+		pending.clock.Stop(now)
+		pending.lastEvent = fmt.Sprintf("%s finished the game with %s.", nickname, moveText)
+	}
+
+	return pending, nil
+}
+
+func (s *roomState) replayGame() (*chess.Game, error) {
+	game := chess.NewGame()
+	for _, moveText := range s.moves {
+		move, err := s.notation.Decode(game.Position(), moveText)
+		if err != nil {
+			return nil, err
+		}
+		if err := game.Move(move); err != nil {
+			return nil, err
+		}
+	}
+	return game, nil
+}
+
+func (s *roomState) applyMove(pending pendingMove) {
+	s.game = pending.game
+	s.clock = pending.clock
+	s.moves = pending.moves
+	s.lastMoveFrom = pending.lastMoveFrom
+	s.lastMoveTo = pending.lastMoveTo
+	s.status = pending.status
+	s.outcome = pending.outcome
+	s.method = pending.method
+	s.lastEvent = pending.lastEvent
+
+	s.log("move submitted", "session_id", pending.playerID, "move", pending.moveText, "turn_next", s.game.Position().Turn().String())
+	if s.status == domain.RoomStatusFinished {
 		s.log("game finished", "outcome", s.outcome, "method", s.method)
 	}
-
-	return nil
 }
 
 func (s *roomState) resign(participantID string) error {
@@ -699,23 +765,43 @@ func (s *roomState) persistRoom(roomID string) error {
 	return s.persistence.UpdateRoom(context.Background(), snapshot, clockSnapshot)
 }
 
-func (s *roomState) persistLatestMove(roomID, playerID string) error {
-	if s.persistence == nil || len(s.moves) == 0 {
+func (s *roomState) persistMove(roomID string, pending pendingMove) error {
+	if s.persistence == nil {
 		return nil
 	}
-	now := time.Now()
-	white, black := s.clock.Snapshot(now)
-	return s.persistence.AppendMove(context.Background(), roomID, PersistedMove{
-		Ply:            len(s.moves),
-		PlayerID:       playerID,
-		SAN:            s.moves[len(s.moves)-1],
-		From:           s.lastMoveFrom,
-		To:             s.lastMoveTo,
-		FENAfter:       s.game.FEN(),
+	white, black := pending.clock.Snapshot(pending.playedAt)
+	move := PersistedMove{
+		Ply:            len(pending.moves),
+		PlayerID:       pending.playerID,
+		SAN:            pending.moveText,
+		From:           pending.lastMoveFrom,
+		To:             pending.lastMoveTo,
+		FENAfter:       pending.game.FEN(),
 		WhiteRemaining: white,
 		BlackRemaining: black,
-		PlayedAt:       now,
-	})
+		PlayedAt:       pending.playedAt,
+	}
+	state := *s
+	state.game = pending.game
+	state.clock = pending.clock
+	state.moves = pending.moves
+	state.lastMoveFrom = pending.lastMoveFrom
+	state.lastMoveTo = pending.lastMoveTo
+	state.status = pending.status
+	state.outcome = pending.outcome
+	state.method = pending.method
+	state.lastEvent = pending.lastEvent
+
+	now := time.Now()
+	snapshot := state.snapshot(roomID, now)
+	clockSnapshot := state.clock.Export(now)
+	if !s.persisted {
+		if err := s.persistence.CreateRoom(context.Background(), snapshot, clockSnapshot); err != nil {
+			return err
+		}
+		s.persisted = true
+	}
+	return s.persistence.PersistMove(context.Background(), roomID, snapshot, clockSnapshot, move)
 }
 
 func (s *roomState) closeSubscribers() {

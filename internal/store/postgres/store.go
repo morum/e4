@@ -174,6 +174,10 @@ type queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
 func findParticipantByKey(ctx context.Context, q queryer, key service.SSHKeyIdentity) (domain.Participant, bool, error) {
 	var p domain.Participant
 	err := q.QueryRowContext(ctx, `
@@ -215,7 +219,11 @@ func (s *Store) CreateRoom(ctx context.Context, snapshot domain.GameSnapshot, cl
 }
 
 func (s *Store) UpdateRoom(ctx context.Context, snapshot domain.GameSnapshot, clockSnapshot clock.Snapshot) error {
-	_, err := s.db.ExecContext(ctx, `
+	return updateRoom(ctx, s.db, snapshot, clockSnapshot)
+}
+
+func updateRoom(ctx context.Context, q execer, snapshot domain.GameSnapshot, clockSnapshot clock.Snapshot) error {
+	_, err := q.ExecContext(ctx, `
 		UPDATE games SET
 			status = $2,
 			base_ns = $3,
@@ -265,7 +273,26 @@ func roomValues(snapshot domain.GameSnapshot, clockSnapshot clock.Snapshot) []an
 }
 
 func (s *Store) AppendMove(ctx context.Context, roomID string, move service.PersistedMove) error {
-	_, err := s.db.ExecContext(ctx, `
+	return appendMove(ctx, s.db, roomID, move)
+}
+
+func (s *Store) PersistMove(ctx context.Context, roomID string, snapshot domain.GameSnapshot, clockSnapshot clock.Snapshot, move service.PersistedMove) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := appendMove(ctx, tx, roomID, move); err != nil {
+		return err
+	}
+	if err := updateRoom(ctx, tx, snapshot, clockSnapshot); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func appendMove(ctx context.Context, q execer, roomID string, move service.PersistedMove) error {
+	_, err := q.ExecContext(ctx, `
 		INSERT INTO game_moves (
 			room_id, ply, player_id, san, from_square, to_square, fen_after,
 			white_remaining_ns, black_remaining_ns, played_at

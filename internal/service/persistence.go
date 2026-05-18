@@ -22,6 +22,7 @@ type GamePersistence interface {
 	CreateRoom(ctx context.Context, snapshot domain.GameSnapshot, clock clock.Snapshot) error
 	UpdateRoom(ctx context.Context, snapshot domain.GameSnapshot, clock clock.Snapshot) error
 	AppendMove(ctx context.Context, roomID string, move PersistedMove) error
+	PersistMove(ctx context.Context, roomID string, snapshot domain.GameSnapshot, clock clock.Snapshot, move PersistedMove) error
 	AppendEvent(ctx context.Context, roomID string, event PersistedEvent) error
 	LoadOpenRooms(ctx context.Context) ([]PersistedRoom, error)
 }
@@ -67,6 +68,9 @@ func (noopPersistence) CreateRoom(context.Context, domain.GameSnapshot, clock.Sn
 func (noopPersistence) UpdateRoom(context.Context, domain.GameSnapshot, clock.Snapshot) error {
 	return nil
 }
-func (noopPersistence) AppendMove(context.Context, string, PersistedMove) error   { return nil }
+func (noopPersistence) AppendMove(context.Context, string, PersistedMove) error { return nil }
+func (noopPersistence) PersistMove(context.Context, string, domain.GameSnapshot, clock.Snapshot, PersistedMove) error {
+	return nil
+}
 func (noopPersistence) AppendEvent(context.Context, string, PersistedEvent) error { return nil }
 func (noopPersistence) LoadOpenRooms(context.Context) ([]PersistedRoom, error)    { return nil, nil }

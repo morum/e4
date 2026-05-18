@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -153,7 +155,7 @@ func TestActiveRoomBroadcastsClockTicks(t *testing.T) {
 	}
 }
 
-func TestSubmitMoveRejectedWhileOpponentDisconnected(t *testing.T) {
+func TestActivePlayerLeaveResignsGame(t *testing.T) {
 	tc, err := domain.ParseTimeControl("3|0")
 	if err != nil {
 		t.Fatalf("ParseTimeControl returned error: %v", err)
@@ -172,11 +174,45 @@ func TestSubmitMoveRejectedWhileOpponentDisconnected(t *testing.T) {
 
 	room.Leave(white.ID)
 
-	if err := room.SubmitMove(white.ID, "e4"); err != ErrGamePaused {
-		t.Fatalf("expected ErrGamePaused while disconnected, got %v", err)
+	snapshot := room.Snapshot()
+	if snapshot.Status != domain.RoomStatusFinished {
+		t.Fatalf("expected active leave to finish by resignation, got %s", snapshot.Status)
 	}
-	if err := room.SubmitMove(black.ID, "e5"); err != ErrGamePaused {
-		t.Fatalf("expected ErrGamePaused while opponent disconnected, got %v", err)
+	if snapshot.Method != "Resignation" || snapshot.Outcome != "0-1" {
+		t.Fatalf("expected white resignation, got outcome=%q method=%q", snapshot.Outcome, snapshot.Method)
+	}
+	if err := room.SubmitMove(black.ID, "e5"); err != ErrGameNotActive {
+		t.Fatalf("expected ErrGameNotActive after resignation, got %v", err)
+	}
+}
+
+func TestSubmitMoveDoesNotMutateStateWhenPersistenceFails(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	persistErr := errors.New("persist move")
+	room := NewPersistentRoom("PERSIST01", tc, failingMovePersistence{err: persistErr}, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	if err := room.SubmitMove(white.ID, "e4"); !errors.Is(err, persistErr) {
+		t.Fatalf("expected persistence error, got %v", err)
+	}
+	snapshot := room.Snapshot()
+	if len(snapshot.Moves) != 0 {
+		t.Fatalf("expected failed persistence to leave moves unchanged, got %#v", snapshot.Moves)
+	}
+	if snapshot.Turn != "white" {
+		t.Fatalf("expected failed persistence to leave turn unchanged, got %q", snapshot.Turn)
 	}
 }
 
@@ -344,4 +380,32 @@ func assertReturns(t *testing.T, name string, fn func()) {
 	case <-time.After(250 * time.Millisecond):
 		t.Fatalf("%s did not return", name)
 	}
+}
+
+type failingMovePersistence struct {
+	err error
+}
+
+func (f failingMovePersistence) CreateRoom(context.Context, domain.GameSnapshot, clock.Snapshot) error {
+	return nil
+}
+
+func (f failingMovePersistence) UpdateRoom(context.Context, domain.GameSnapshot, clock.Snapshot) error {
+	return nil
+}
+
+func (f failingMovePersistence) AppendMove(context.Context, string, PersistedMove) error {
+	return f.err
+}
+
+func (f failingMovePersistence) PersistMove(context.Context, string, domain.GameSnapshot, clock.Snapshot, PersistedMove) error {
+	return f.err
+}
+
+func (f failingMovePersistence) AppendEvent(context.Context, string, PersistedEvent) error {
+	return nil
+}
+
+func (f failingMovePersistence) LoadOpenRooms(context.Context) ([]PersistedRoom, error) {
+	return nil, nil
 }
