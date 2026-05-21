@@ -18,10 +18,17 @@ You run the server, connect over SSH, pick a nickname, and play or watch games.
 
 ## Quick Start
 
-Run the server:
+Run Postgres and the server:
 
 ```bash
-go run ./cmd/e4 serve --listen :2222 --log-level debug
+docker compose up --build
+```
+
+Or run the server against an existing Postgres database:
+
+```bash
+E4_DATABASE_URL='postgres://e4:e4@localhost:5432/e4?sslmode=disable' \
+  go run ./cmd/e4 serve --listen :2222 --log-level debug
 ```
 
 Connect from another terminal:
@@ -30,7 +37,7 @@ Connect from another terminal:
 ssh -p 2222 anything@localhost
 ```
 
-The SSH username is ignored. You choose a nickname after connecting.
+The SSH username is ignored. Player identity is tied to your SSH public key, and you choose a nickname after connecting.
 
 Install the binary with:
 
@@ -86,7 +93,7 @@ Slash commands typed into the input:
 ## Configuration
 
 ```bash
-e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info] [--theme classic]
+e4 serve [--listen :2222] [--host-key ./.e4_host_key] [--log-level info] [--theme classic] [--database-url postgres://...]
 ```
 
 Flags:
@@ -95,8 +102,10 @@ Flags:
 - `--host-key`: path to the SSH private host key file
 - `--log-level`: `debug`, `info`, `warn`, or `error`
 - `--theme`: default TUI theme (`classic`, `mono`, or `nightowl`)
+- `--database-url`: Postgres connection URL. Can also be set with `E4_DATABASE_URL`
 
 By default, `e4` stores its generated host key in `.e4_host_key`.
+Postgres 18+ is required for persistent player identities, games, and move history.
 
 ## Project Layout
 
@@ -105,7 +114,8 @@ cmd/e4                  CLI entrypoint
 internal/app            app wiring and configuration
 internal/domain         core game and lobby types
 internal/service        room and lobby services
-internal/store/memory   in-memory repositories
+internal/store/memory   live in-memory room directory
+internal/store/postgres persistent Postgres repositories and migrations
 internal/clock          chess clock state
 internal/tui            Bubble Tea models, widgets, and themes
 internal/transport/ssh  SSH transport and session handling

@@ -38,6 +38,9 @@ func NewServer(cfg Config, lobby *service.LobbyService) (*Server, error) {
 		wish.WithIdleTimeout(8*time.Hour),
 		wish.WithMaxTimeout(24*time.Hour),
 		wish.WithBanner("Welcome to e4\n"),
+		wish.WithPublicKeyAuth(func(_ ssh.Context, key ssh.PublicKey) bool {
+			return key != nil
+		}),
 		wish.WithMiddleware(
 			bubbletea.Middleware(handler),
 			activeterm.Middleware(),

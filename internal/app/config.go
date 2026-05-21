@@ -5,6 +5,7 @@ type Config struct {
 	HostKeyPath string
 	LogLevel    string
 	Theme       string
+	DatabaseURL string
 }
 
 func DefaultConfig() Config {

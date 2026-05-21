@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -153,6 +155,141 @@ func TestActiveRoomBroadcastsClockTicks(t *testing.T) {
 	}
 }
 
+func TestActivePlayerLeaveResignsGame(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("PAUSE01", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	room.Leave(white.ID)
+
+	snapshot := room.Snapshot()
+	if snapshot.Status != domain.RoomStatusFinished {
+		t.Fatalf("expected active leave to finish by resignation, got %s", snapshot.Status)
+	}
+	if snapshot.Method != "Resignation" || snapshot.Outcome != "0-1" {
+		t.Fatalf("expected white resignation, got outcome=%q method=%q", snapshot.Outcome, snapshot.Method)
+	}
+	if err := room.SubmitMove(black.ID, "e5"); err != ErrGameNotActive {
+		t.Fatalf("expected ErrGameNotActive after resignation, got %v", err)
+	}
+}
+
+func TestSubmitMoveDoesNotMutateStateWhenPersistenceFails(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	persistErr := errors.New("persist move")
+	room := NewPersistentRoom("PERSIST01", tc, failingMovePersistence{err: persistErr}, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	if err := room.SubmitMove(white.ID, "e4"); !errors.Is(err, persistErr) {
+		t.Fatalf("expected persistence error, got %v", err)
+	}
+	snapshot := room.Snapshot()
+	if len(snapshot.Moves) != 0 {
+		t.Fatalf("expected failed persistence to leave moves unchanged, got %#v", snapshot.Moves)
+	}
+	if snapshot.Turn != "white" {
+		t.Fatalf("expected failed persistence to leave turn unchanged, got %q", snapshot.Turn)
+	}
+}
+
+func TestReconnectSamePlayerDoesNotResetRunningClock(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	room := NewRoom("CLK01", tc, nil)
+	white := domain.Participant{ID: "p1", Nickname: "alice"}
+	black := domain.Participant{ID: "p2", Nickname: "bob"}
+
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+
+	time.Sleep(800 * time.Millisecond)
+	before := room.Snapshot()
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) reconnect returned error: %v", err)
+	}
+	after := room.Snapshot()
+
+	if after.WhiteTimeLeft > before.WhiteTimeLeft+50*time.Millisecond {
+		t.Fatalf("reconnect must not grant extra time: before=%v after=%v", before.WhiteTimeLeft, after.WhiteTimeLeft)
+	}
+}
+
+func TestRestoreActiveRoomPausesUntilBothPlayersReconnect(t *testing.T) {
+	tc, err := domain.ParseTimeControl("3|0")
+	if err != nil {
+		t.Fatalf("ParseTimeControl returned error: %v", err)
+	}
+
+	white := domain.Participant{ID: "11111111-1111-1111-1111-111111111111", Nickname: "alice"}
+	black := domain.Participant{ID: "22222222-2222-2222-2222-222222222222", Nickname: "bob"}
+	room, err := RestoreRoom(PersistedRoom{
+		ID:          "REST01",
+		Status:      domain.RoomStatusActive,
+		TimeControl: tc,
+		White:       &white,
+		Black:       &black,
+		Moves:       []string{"e4", "e5"},
+		Clock: clock.Snapshot{
+			WhiteRemaining: 3 * time.Second,
+			BlackRemaining: 3 * time.Second,
+			Increment:      tc.Increment,
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("RestoreRoom returned error: %v", err)
+	}
+
+	before := room.Snapshot()
+	if _, err := room.JoinPlayer(white); err != nil {
+		t.Fatalf("JoinPlayer(white) returned error: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	afterOne := room.Snapshot()
+	if afterOne.WhiteTimeLeft != before.WhiteTimeLeft {
+		t.Fatalf("expected restored game to remain paused until both players reconnect, got %v then %v", before.WhiteTimeLeft, afterOne.WhiteTimeLeft)
+	}
+
+	if _, err := room.JoinPlayer(black); err != nil {
+		t.Fatalf("JoinPlayer(black) returned error: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	afterBoth := room.Snapshot()
+	if afterBoth.WhiteTimeLeft >= afterOne.WhiteTimeLeft {
+		t.Fatalf("expected side-to-move clock to run after both reconnect, got %v then %v", afterOne.WhiteTimeLeft, afterBoth.WhiteTimeLeft)
+	}
+}
+
 func TestClosedRoomMethodsReturnWithoutDeadlock(t *testing.T) {
 	tc, err := domain.ParseTimeControl("3|0")
 	if err != nil {
@@ -243,4 +380,32 @@ func assertReturns(t *testing.T, name string, fn func()) {
 	case <-time.After(250 * time.Millisecond):
 		t.Fatalf("%s did not return", name)
 	}
+}
+
+type failingMovePersistence struct {
+	err error
+}
+
+func (f failingMovePersistence) CreateRoom(context.Context, domain.GameSnapshot, clock.Snapshot) error {
+	return nil
+}
+
+func (f failingMovePersistence) UpdateRoom(context.Context, domain.GameSnapshot, clock.Snapshot) error {
+	return nil
+}
+
+func (f failingMovePersistence) AppendMove(context.Context, string, PersistedMove) error {
+	return f.err
+}
+
+func (f failingMovePersistence) PersistMove(context.Context, string, domain.GameSnapshot, clock.Snapshot, PersistedMove) error {
+	return f.err
+}
+
+func (f failingMovePersistence) AppendEvent(context.Context, string, PersistedEvent) error {
+	return nil
+}
+
+func (f failingMovePersistence) LoadOpenRooms(context.Context) ([]PersistedRoom, error) {
+	return nil, nil
 }

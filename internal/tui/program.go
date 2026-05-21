@@ -19,6 +19,7 @@ import (
 	"github.com/morum/e4/internal/service"
 	"github.com/morum/e4/internal/tui/app"
 	"github.com/morum/e4/internal/tui/theme"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 // nonPTYMessage is what we tell clients that attach without an interactive
@@ -54,9 +55,19 @@ func Handler(lobby *service.LobbyService, registry *theme.Registry, defaultTheme
 		}
 
 		sessionID := randomID()
+		key := sess.PublicKey()
+		if key == nil {
+			fmt.Fprintln(sess.Stderr(), "e4 requires SSH public key authentication.")
+			_ = sess.Exit(1)
+			return nil, nil
+		}
 		participant := domain.Participant{
-			ID:       sessionID,
-			Nickname: guestNickname(sessionID),
+			ID:               sessionID,
+			SessionID:        sessionID,
+			KeyFingerprint:   gossh.FingerprintSHA256(key),
+			SSHAuthorizedKey: strings.TrimSpace(string(gossh.MarshalAuthorizedKey(key))),
+			SSHKeyType:       key.Type(),
+			Nickname:         guestNickname(sessionID),
 		}
 
 		selected := defaultTheme
